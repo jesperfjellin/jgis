@@ -287,10 +287,10 @@ GeoServer, so it is not tied to this repository's data. Its k6 scenarios
 simulate users browsing a map (OGC API tiles, WMS, OGC API Features, or a mix).
 `make loadtest` runs one and writes a report to
 `loadtest/results/<id>/report.md`, with findings that link to a playbook of
-causes and remedies (`loadtest/playbook/`). The report covers client and server latency per
-service, layer and cache result, JVM, container and PostgreSQL metrics, top SQL
-statements and slow plans, GeoServer warnings, and optionally a JFR CPU profile
-of GeoServer. Tests can be repeated to measure noise and compared with a
+causes and remedies (`loadtest/playbook/`). The report covers client and server
+latency per service, layer and cache result, JVM, container and PostgreSQL
+metrics, top SQL statements and slow plans, GeoServer warnings, and optionally
+a JFR CPU profile of GeoServer. Tests can be repeated to measure noise and compared with a
 baseline (`BASE=<id>`). Results also appear in the **Load test** Grafana
 dashboard. See [loadtest/README.md](loadtest/README.md).
 
