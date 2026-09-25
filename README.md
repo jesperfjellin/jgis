@@ -28,7 +28,7 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 - GNU Make and OpenSSL
 - About 12 GB of free disk space (database plus the downloaded extract)
 - About 6 GB of RAM available to Docker. The stack itself stays within about
-  5 GB: every service has a memory limit (see [Memory](#memory)).
+  5.5 GB: every service has a memory limit (see [Memory](#memory)).
 
 ## Setup
 
@@ -114,8 +114,8 @@ settings that must fit inside them are in `environments/.env`:
 
 | Variable                  | Default   | Notes |
 |---------------------------|-----------|-------|
-| `GEOSERVER_MEM_LIMIT`     | `2g`      | Container limit |
-| `GEOSERVER_JAVA_OPTS`     | `-Xms512m -Xmx1536m` | Heap; leave about 0.5 GB of the limit for the JVM itself |
+| `GEOSERVER_MEM_LIMIT`     | `2560m`   | Container limit |
+| `GEOSERVER_JAVA_OPTS`     | `-Xms512m -Xmx1536m` | Heap; leave about 1 GB of the limit for the JVM's own memory (class metadata, compiled code, thread stacks, buffers) |
 | `POSTGIS_MEM_LIMIT`       | `1536m`   | Container limit |
 | `PG_SHARED_BUFFERS`       | `512MB`   | PostgreSQL buffer cache |
 | `PG_EFFECTIVE_CACHE_SIZE` | `1GB`     | Planner hint for the OS file cache |
@@ -281,9 +281,13 @@ Alloy needs read access to `/var/run/docker.sock` to collect container logs.
 
 ## Load tests
 
-`loadtest/` contains k6 scenarios that simulate users browsing a map (OGC API
-tiles, WMS, OGC API Features, or a mix). `make loadtest` runs one and writes a
-report to `loadtest/results/<id>/report.md`: client and server latency per
+`loadtest/` is a pipeline for finding and fixing GeoServer performance
+problems. It discovers the layers to test and the areas where the data is from
+GeoServer, so it is not tied to this repository's data. Its k6 scenarios
+simulate users browsing a map (OGC API tiles, WMS, OGC API Features, or a mix).
+`make loadtest` runs one and writes a report to
+`loadtest/results/<id>/report.md`, with findings that link to a playbook of
+causes and remedies (`loadtest/playbook/`). The report covers client and server latency per
 service, layer and cache result, JVM, container and PostgreSQL metrics, top SQL
 statements and slow plans, GeoServer warnings, and optionally a JFR CPU profile
 of GeoServer. Tests can be repeated to measure noise and compared with a

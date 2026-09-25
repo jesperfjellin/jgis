@@ -72,7 +72,7 @@ services:
         condition: service_healthy
 
   geoserver:
-    mem_limit: ${GEOSERVER_MEM_LIMIT:-2g}
+    mem_limit: ${GEOSERVER_MEM_LIMIT:-2560m}
     build:
       context: ./geoserver
       args:

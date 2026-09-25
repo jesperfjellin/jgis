@@ -21,6 +21,8 @@ from collections import Counter, defaultdict
 
 PROMETHEUS = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090")
 LOKI = os.environ.get("LOKI_URL", "http://loki:3100")
+DB_NAME = os.environ.get("DB_NAME", "gis")
+DB_ROLE = os.environ.get("DB_ROLE", "geoserver")
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS = os.path.join(HERE, "..", "lib", "defaults.json")
 
@@ -116,11 +118,13 @@ def md_table(headers, rows):
 
 
 def settings(context):
-    """Effective scenario settings: defaults.json overlaid with what was set."""
+    """Effective scenario settings: defaults.json, overlaid with discovered
+    values, overlaid with what was set explicitly."""
     effective = json.load(open(DEFAULTS, encoding="utf-8"))
-    for key, value in context.items():
-        if key.startswith("SETTING_"):
-            effective[key[len("SETTING_"):]] = value
+    for prefix in ("DISCOVERED_", "SETTING_"):
+        for key, value in context.items():
+            if key.startswith(prefix):
+                effective[key[len(prefix):]] = value
     return effective
 
 
@@ -200,7 +204,7 @@ def collect_jvm(end, window):
 
 def collect_database(end, window):
     rng = f"[{window}s]"
-    db = 'datname="gis"'
+    db = f'datname="{DB_NAME}"'
     inc = lambda m: prom_one(f"sum(increase({m}{{{db}}}{rng}))", end)
     returned, fetched = inc("pg_stat_database_tup_returned"), inc("pg_stat_database_tup_fetched")
     hit, read = inc("pg_stat_database_blks_hit"), inc("pg_stat_database_blks_read")
@@ -216,7 +220,7 @@ def collect_database(end, window):
     }
     # Statements run by GeoServer during the window. postgres_exporter reports
     # the 50 statements with the highest total time since the last reset.
-    sel = f'{db}, user="geoserver"'
+    sel = f'{db}, user="{DB_ROLE}"'
     times = prom(f"topk(10, sum by (queryid) (increase(pg_stat_statements_seconds_total{{{sel}}}{rng})) > 0)", end)
     calls = {m["queryid"]: v for m, v in prom(f"sum by (queryid) (increase(pg_stat_statements_calls_total{{{sel}}}{rng}))", end)}
     rows_ = {m["queryid"]: v for m, v in prom(f"sum by (queryid) (increase(pg_stat_statements_rows_total{{{sel}}}{rng}))", end)}
@@ -438,87 +442,108 @@ def collect_profile(rdir):
 
 
 # ---------------------------------------------------------------------------
-# Findings: rule-of-thumb flags that point at where to look
+# Findings: rule-of-thumb flags with stable ids. Each id has a playbook entry in
+# loadtest/playbook/<id>.md with causes, remedies and how to verify a fix.
 # ---------------------------------------------------------------------------
+
+# CPU profile signatures: (id, frame prefixes, minimum inclusive share, what it is).
+PROFILE_SIGNATURES = [
+    ("mvt-simplification-cpu", ("org.geoserver.wms.vector.PipelineBuilder$Simplify",), 0.25,
+     "simplifying geometries while building vector tiles"),
+    ("label-rendering-cpu", ("org.geotools.renderer.label.",), 0.20, "placing and drawing labels"),
+    ("reprojection-cpu", ("org.geotools.referencing.", "org.geotools.renderer.crs."), 0.15,
+     "reprojecting or wrapping geometries while rendering"),
+    ("image-encoding-cpu", ("it.geosolutions.imageio.", "javax.imageio.", "com.sun.imageio.", "ar.com.hjg.pngj."), 0.20,
+     "encoding PNG/JPEG images"),
+]
 
 
 def findings(r):
     out = []
+    add = lambda fid, text: out.append({"id": fid, "text": text})
     ctx = r["context"]
+    cores = float(ctx.get("DOCKER_NCPU") or 0)
+
+    # Is the measurement itself trustworthy?
     for e in r.get("container_events", []):
-        out.append(f"Container {e['container']} " + ("was OOM-killed" if e["oom_killed"] else f"restarted {e['restarts']} time(s)")
-                   + " during the run: results are not reliable. Raise its memory limit in environments/.env or lower the load.")
+        add("container-restarted", f"Container {e['container']} "
+            + ("was OOM-killed" if e["oom_killed"] else f"restarted {e['restarts']} time(s)") + " during the run: results are not reliable.")
     pr = r.get("pressure", {})
-    mem_full = (pr.get("memory") or {}).get("full") or 0
-    mem_some = (pr.get("memory") or {}).get("some") or 0
-    if mem_full > 0.01 or mem_some > 0.05:
-        out.append(f"The Docker host was short of memory: tasks stalled {pct(mem_some)} of the time (all tasks {pct(mem_full)}). "
-                   "Results are not reliable; free memory on the host or lower the stack's memory limits.")
-    cpu_some = (pr.get("cpu") or {}).get("some") or 0
-    if cpu_some > 0.5:
-        out.append(f"Tasks on the Docker host waited for CPU {pct(cpu_some)} of the time: the machine, not only GeoServer, was saturated.")
-    io_full = (pr.get("io") or {}).get("full") or 0
-    if io_full > 0.1:
-        out.append(f"All tasks on the Docker host stalled on IO {pct(io_full)} of the time: disk-bound.")
+    mem = pr.get("memory") or {}
+    if (mem.get("full") or 0) > 0.01 or (mem.get("some") or 0) > 0.05:
+        add("host-memory-pressure", f"The Docker host was short of memory: tasks stalled {pct(mem.get('some'))} of the time "
+            f"(all tasks {pct(mem.get('full'))}). Results are not reliable.")
+    if ((pr.get("cpu") or {}).get("some") or 0) > 0.5:
+        add("host-cpu-saturated", f"Tasks on the Docker host waited for CPU {pct(pr['cpu']['some'])} of the time: the machine was saturated.")
+    if ((pr.get("io") or {}).get("full") or 0) > 0.1:
+        add("host-io-bound", f"All tasks on the Docker host stalled on IO {pct(pr['io']['full'])} of the time.")
     for name, res in r.get("resources", {}).items():
         if res.get("mem_limit_bytes") and res.get("mem_max_bytes") and res["mem_max_bytes"] > 0.9 * res["mem_limit_bytes"]:
-            out.append(f"Container {name} used {res['mem_max_bytes'] / res['mem_limit_bytes']:.0%} of its memory limit.")
-    cores = float(ctx.get("DOCKER_NCPU") or 0)
+            add("container-near-memory-limit", f"Container {name} used {res['mem_max_bytes'] / res['mem_limit_bytes']:.0%} of its memory limit.")
+    if (res := r.get("resources", {}).get("k6")) is not None and cores and res["cpu_cores_max"] > 0.25 * cores:
+        add("loadgen-cpu", "k6 used over a quarter of the machine's CPU: the load generator competes with the stack.")
     client = r["client"]["overall"]
     if client.get("failed"):
-        out.append(f"{client['failed']} of {client['requests']} requests failed.")
+        add("requests-failed", f"{client['failed']} of {client['requests']} requests failed.")
+
+    # Where the time goes.
+    rows = r["server"]["by_service_layer_cache"]
     for svc, ratio in r["server"]["cache_hit_ratio"].items():
         if ratio >= 0.9:
-            out.append(f"{svc}: {pct(ratio)} tile cache hits. Latency for this service mostly measures GeoWebCache, not rendering "
-                       "(use COLD_CACHE=true or look at the cache=miss rows).")
-    misses = [x for x in r["server"]["by_service_layer_cache"] if x["cache"] == "miss" and x.get("requests", 0) >= 20]
-    if misses:
-        worst = max(misses, key=lambda x: x.get("p95_ms") or 0)
-        out.append(f"Slowest uncached tiles: {worst['layer']} ({worst['service']}), P95 {fmt_ms(worst.get('p95_ms'))} ms over {worst['requests']} misses.")
-    for x in r["server"]["by_service_layer_cache"]:
+            add("tile-cache-dominates", f"{svc}: {pct(ratio)} tile cache hits. Latency for this service mostly measures GeoWebCache, not rendering.")
+    total = sum(x.get("total_s") or 0 for x in rows)
+    heavy = max(rows, key=lambda x: x.get("total_s") or 0, default=None)
+    if heavy and total and heavy.get("total_s", 0) / total > 0.3:
+        add("server-time-concentrated", f"{heavy['layer'] or '-'} / {heavy['service']} / cache={heavy['cache']} took "
+            f"{pct(heavy['total_s'] / total)} of all GeoServer request time ({heavy['total_s']} s).")
+    misses = [x for x in rows if x["cache"] in ("miss", "none") and x.get("requests", 0) >= 20 and (x.get("p95_ms") or 0) > 500]
+    for x in sorted(misses, key=lambda x: -(x.get("p95_ms") or 0))[:3]:
+        add("slow-render", f"{x['layer'] or '-'} ({x['service']}, cache={x['cache']}): P95 {fmt_ms(x.get('p95_ms'))} ms over {x['requests']} rendered requests.")
+    for x in rows:
         if x["cache"] == "hit" and x.get("requests", 0) >= 20 and (x.get("p95_ms") or 0) > 50 and (x.get("p95_ms") or 0) > 10 * (x.get("p50_ms") or 1):
-            out.append(f"Cache hits for {x['layer']} ({x['service']}) have P50 {fmt_ms(x.get('p50_ms'))} ms but P95 {fmt_ms(x.get('p95_ms'))} ms "
-                       f"and max {fmt_ms(x.get('max_ms'))} ms: most likely requests waiting for another request to render the same "
-                       "GeoWebCache metatile, so they cost what the render costs.")
-    heavy = sorted(r["server"]["by_service_layer_cache"], key=lambda x: -(x.get("total_s") or 0))[:1]
-    if heavy and heavy[0].get("total_s"):
-        total = sum(x.get("total_s") or 0 for x in r["server"]["by_service_layer_cache"])
-        h = heavy[0]
-        out.append(f"Most server time: {h['layer'] or '-'} / {h['service']} / cache={h['cache']}: {h['total_s']} s, "
-                   f"{pct(h['total_s'] / total) if total else '-'} of all request time.")
+            add("metatile-wait", f"Cache hits for {x['layer']} ({x['service']}): P50 {fmt_ms(x.get('p50_ms'))} ms but P95 {fmt_ms(x.get('p95_ms'))} ms, "
+                f"max {fmt_ms(x.get('max_ms'))} ms. Most likely waiting for another request to render the same metatile.")
+
+    # GeoServer and the JVM.
     jvm = r["jvm"]
     if cores and jvm.get("cpu_cores_max") and jvm["cpu_cores_max"] > 0.8 * cores:
-        out.append(f"GeoServer CPU peaked at {jvm['cpu_cores_max']:.1f} of {cores:.0f} cores: CPU-bound.")
+        add("geoserver-cpu-bound", f"GeoServer CPU peaked at {jvm['cpu_cores_max']:.1f} of {cores:.0f} cores.")
     if jvm.get("tomcat_max_threads") and jvm.get("tomcat_busy_threads_max") and jvm["tomcat_busy_threads_max"] >= 0.8 * jvm["tomcat_max_threads"]:
-        out.append("Tomcat busy threads reached 80% of the maximum: requests may queue.")
+        add("tomcat-threads-saturated", f"Tomcat busy threads reached {fmt_num(jvm['tomcat_busy_threads_max'])} of {fmt_num(jvm['tomcat_max_threads'])}: requests queue.")
     if jvm.get("gc_time_share") and jvm["gc_time_share"] > 0.05:
-        out.append(f"GC took {pct(jvm['gc_time_share'])} of wall time: heap pressure.")
+        add("jvm-gc-pressure", f"GC took {pct(jvm['gc_time_share'])} of wall time.")
     if jvm.get("heap_max_bytes") and jvm.get("heap_used_max_bytes") and jvm["heap_used_max_bytes"] > 0.85 * jvm["heap_max_bytes"]:
-        out.append("Heap use peaked above 85% of the maximum.")
+        add("jvm-heap-near-max", f"Heap use peaked at {jvm['heap_used_max_bytes'] / jvm['heap_max_bytes']:.0%} of the maximum.")
+    requests = sum(x.get("requests", 0) for x in rows)
+    for w in r["warnings"][:3]:
+        if requests and w["count"] >= max(100, 0.1 * requests):
+            add("geoserver-log-flood", f"GeoServer logged '{w['message'][:90]}' {w['count']:,} times, {w['count'] / requests:.1f} per request.")
+
+    # PostgreSQL.
     db = r["database"]
     if db.get("scanned_per_returned") and db["scanned_per_returned"] > 3:
-        out.append(f"PostgreSQL scanned {db['scanned_per_returned']}x more rows than it returned: filters applied after the index, "
-                   "or sequential scans. See top statements and slow plans.")
+        add("pg-rows-scanned-ratio", f"PostgreSQL scanned {db['scanned_per_returned']}x more rows than it returned.")
     if db.get("buffer_hit_ratio") is not None and db["buffer_hit_ratio"] < 0.95:
-        out.append(f"PostgreSQL buffer cache hit ratio {pct(db['buffer_hit_ratio'])}: data read from disk or OS cache.")
+        add("pg-buffer-cache-misses", f"PostgreSQL buffer cache hit ratio {pct(db['buffer_hit_ratio'])}.")
     if db.get("temp_bytes"):
-        out.append(f"PostgreSQL wrote {db['temp_bytes'] / 1e6:.0f} MB of temp files: sorts or hashes exceeded work_mem.")
+        add("pg-temp-files", f"PostgreSQL wrote {db['temp_bytes'] / 1e6:.0f} MB of temp files.")
     if r["slow_plans"]["count"]:
-        out.append(f"{r['slow_plans']['count']} statements took over 500 ms (plans below).")
-    total_requests = sum(x.get("requests", 0) for x in r["server"]["by_service_layer_cache"])
-    for w in r["warnings"][:3]:
-        if w["count"] >= 100:
-            per = f", {w['count'] / total_requests:.1f} per request" if total_requests else ""
-            out.append(f"GeoServer logged '{w['message'][:90]}' {w['count']:,} times{per}.")
+        add("pg-slow-statements", f"{r['slow_plans']['count']} statements took over 500 ms (plans in the report).")
+
+    # CPU profile.
     prof = r.get("profile") or {}
-    if prof.get("components"):
-        top = prof["components"][0]
-        out.append(f"JFR: largest share of GeoServer request CPU is {top['component']} ({pct(top['share'])}).")
-    for name, res in r.get("resources", {}).items():
-        if cores and res["cpu_cores_max"] > 0.8 * cores:
-            out.append(f"Container {name} peaked at {res['cpu_cores_max']} of {cores:.0f} cores.")
-    if (res := r.get("resources", {}).get("k6")) is not None and cores and res["cpu_cores_max"] > 0.25 * cores:
-        out.append("k6 used over a quarter of the machine's CPU: the load generator competes with the stack.")
+    if prof.get("inclusive"):
+        inclusive = {x["method"]: x["share"] for x in prof["inclusive"]}
+        for fid, prefixes, threshold, what in PROFILE_SIGNATURES:
+            share = max((v for m, v in inclusive.items() if m.startswith(prefixes)), default=0)
+            if share >= threshold:
+                add(fid, f"JFR: {pct(share)} of GeoServer request CPU is spent {what}.")
+        if prof.get("components"):
+            top = prof["components"][0]
+            add("profile-top-component", f"JFR: largest share of GeoServer request CPU is {top['component']} ({pct(top['share'])}).")
+        waits = sum(x["samples"] for x in prof.get("native_waits", []) if x["frame"].startswith("org.postgresql."))
+        if prof.get("cpu_samples") and waits / (prof["cpu_samples"] + prof.get("native_samples", 0) or 1) > 0.3:
+            add("db-wait", "GeoServer request threads spent a large share of samples waiting for PostgreSQL.")
     return out
 
 
@@ -538,8 +563,14 @@ def render_context(r):
         f"({ctx.get('DOCKER_OS')}, Docker {ctx.get('DOCKER_VERSION')}); host {ctx.get('HOST_CPU', '?')}",
         f"- Load: {st['VUS']} users for {st['DURATION']}" + (f" after {st['WARMUP']} warm-up" if st.get("WARMUP") else "")
         + f", seed {st['SEED']}" + (", cold tile cache" if st.get("COLD_CACHE") == "true" else ""),
-        f"- Settings changed from defaults: {', '.join(f'{k}={v}' for k, v in changed.items()) or 'none'}",
+        f"- Settings changed from defaults: {', '.join(f'{k}={v}' for k, v in changed.items() if k != 'AREAS') or 'none'}"
+        + (" (AREAS set)" if "SETTING_AREAS" in ctx else ""),
     ]
+    disc = [k for k in ctx if k.startswith("DISCOVERED_")]
+    if disc:
+        areas = json.loads(st.get("AREAS") or "[]")
+        lines.append(f"- Discovered from GeoServer: tile layers `{st.get('TILE_LAYERS')}`; feature layers `{st.get('FEATURE_LAYERS')}`; "
+                     f"{len(areas)} areas around " + ", ".join(f"({a[0]}, {a[1]})" for a in areas[:10]))
     return "\n".join(lines)
 
 
@@ -547,7 +578,9 @@ def render_run(r):
     c = r["client"]["overall"]
     out = [f"# Load test run {r['run']} of `{r['context'].get('TESTID')}`", "", render_context(r),
            f"- Measured window: {r['window_s']} s", ""]
-    out += ["## Findings", ""] + [f"- {f}" for f in r["findings"] or ["Nothing stood out."]] + [""]
+    out += ["## Findings", "", "Each finding has a playbook entry: `loadtest/playbook/<id>.md`.", ""]
+    out += [f"- `{f['id']}`: {f['text']}" for f in r["findings"]] or ["- Nothing stood out."]
+    out += [""]
     out += ["## Client (k6)", "",
             f"{fmt_num(c['requests'])} requests, {c['rps']} req/s, {c['failed']} failed, up to {fmt_num(c.get('vus'))} users. "
             f"P50 {fmt_ms(c['p50_ms'])} ms, P95 {fmt_ms(c['p95_ms'])} ms, P99 {fmt_ms(c['p99_ms'])} ms.", "",
@@ -662,6 +695,14 @@ def key_metrics(r):
     for res in ("memory", "cpu", "io"):
         if res in r.get("pressure", {}):
             m[f"host {res} pressure (some)"] = (r["pressure"][res]["some"], True, None)
+    prof = r.get("profile") or {}
+    for x in prof.get("components", [])[:6]:
+        m[f"profile CPU share: {x['component']}"] = (x["share"], True, prof.get("cpu_samples"))
+    inclusive = {x["method"]: x["share"] for x in prof.get("inclusive", [])}
+    for fid, prefixes, _, _ in PROFILE_SIGNATURES:
+        share = max((v for k, v in inclusive.items() if k.startswith(prefixes)), default=None)
+        if share is not None:
+            m[f"profile CPU share: {fid}"] = (share, True, prof.get("cpu_samples"))
     return m
 
 
@@ -687,7 +728,9 @@ def cmd_aggregate(test_dir):
     json.dump(agg, open(os.path.join(test_dir, "report.json"), "w", encoding="utf-8"), indent=2)
 
     out = [f"# Load test `{agg['context'].get('TESTID')}`", "", render_context(runs[0]), f"- Runs: {len(runs)}", ""]
-    out += ["## Findings (last run)", ""] + [f"- {f}" for f in agg["findings_last_run"] or ["Nothing stood out."]] + [""]
+    out += ["## Findings (last run)", "", "Each finding has a playbook entry: `loadtest/playbook/<id>.md`.", ""]
+    out += [f"- `{f['id']}`: {f['text']}" for f in agg["findings_last_run"]] or ["- Nothing stood out."]
+    out += [""]
     if len(runs) > 1:
         out += ["## Key metrics over all runs", "", "Spread is (max - min) / median; use it to judge whether a later change is noise.", "",
                 md_table(["metric", "median", "min", "max", "spread"],
@@ -722,7 +765,8 @@ def cmd_compare(base_dir, test_dir):
     rows.sort(key=lambda x: -x[0])
     bs, ts = dict(base["settings"]), dict(test["settings"])
     bs["PROFILE"], ts["PROFILE"] = base["context"].get("PROFILE") or "false", test["context"].get("PROFILE") or "false"
-    diff_settings = [f"{k}: {bs.get(k)} -> {ts.get(k)}" for k in sorted(set(bs) | set(ts)) if bs.get(k) != ts.get(k)]
+    short = lambda v: v if len(str(v)) <= 60 else str(v)[:57] + "..."
+    diff_settings = [f"{k}: {short(bs.get(k))} -> {short(ts.get(k))}" for k in sorted(set(bs) | set(ts)) if bs.get(k) != ts.get(k)]
     bc, tc = base["context"], test["context"]
     out = [f"# `{tc.get('TESTID')}` compared with `{bc.get('TESTID')}`", "",
            f"- Base: commit `{bc.get('GIT_COMMIT')}`, {base['runs']} run(s). Test: commit `{tc.get('GIT_COMMIT')}`"

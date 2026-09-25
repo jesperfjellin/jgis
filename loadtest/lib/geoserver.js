@@ -8,6 +8,11 @@ import { lonLatToTile, tileBbox3857, tileBbox4326, viewTiles, rng, pick, weighte
 
 const MVT = 'application/vnd.mapbox-vector-tile';
 
+// workspace:layer, whether or not the layer name already has the workspace.
+export function qualified(layer) {
+  return layer.includes(':') || !cfg.WORKSPACE ? layer : `${cfg.WORKSPACE}:${layer}`;
+}
+
 // ---------------------------------------------------------------------------
 // Setup helpers (run once per test, in setup())
 // ---------------------------------------------------------------------------
@@ -19,7 +24,7 @@ const MVT = 'application/vnd.mapbox-vector-tile';
 export function tileLayerInfo(layers) {
   const info = {};
   for (const layer of layers) {
-    const url = `${cfg.BASE_URL}/ogc/tiles/v1/collections/${cfg.WORKSPACE}:${layer}/tiles/WebMercatorQuad/metadata?f=application/json`;
+    const url = `${cfg.BASE_URL}/ogc/tiles/v1/collections/${qualified(layer)}/tiles/WebMercatorQuad/metadata?f=application/json`;
     const res = http.get(url, { tags: { name: 'setup' } });
     if (res.status !== 200) throw new Error(`No TileJSON for ${layer} (HTTP ${res.status}): ${url}`);
     const tj = res.json();
@@ -36,7 +41,7 @@ export function truncateTileCache(layers) {
   for (const layer of layers) {
     const res = http.post(
       `${cfg.BASE_URL}/gwc/rest/masstruncate`,
-      `<truncateLayer><layerName>${cfg.WORKSPACE}:${layer}</layerName></truncateLayer>`,
+      `<truncateLayer><layerName>${qualified(layer)}</layerName></truncateLayer>`,
       { headers: { 'Content-Type': 'text/xml', Authorization: auth }, tags: { name: 'setup' } },
     );
     if (res.status !== 200) throw new Error(`Truncating ${layer} failed (HTTP ${res.status})`);
@@ -92,7 +97,7 @@ export function tileInBounds(t, bounds) {
 }
 
 export function tileRequest(layer, t, format) {
-  const coll = `${cfg.BASE_URL}/ogc/tiles/v1/collections/${cfg.WORKSPACE}:${layer}`;
+  const coll = `${cfg.BASE_URL}/ogc/tiles/v1/collections/${qualified(layer)}`;
   return format === 'map'
     ? { url: `${coll}/map/tiles/WebMercatorQuad/${t.z}/${t.y}/${t.x}?f=image/png`, tags: { name: 'ogcapi-maptiles', layer } }
     : { url: `${coll}/tiles/WebMercatorQuad/${t.z}/${t.y}/${t.x}?f=${MVT}`, tags: { name: 'ogcapi-tiles', layer } };
@@ -101,9 +106,10 @@ export function tileRequest(layer, t, format) {
 // One WMS GetMap per 256 px tile with all layers combined, like a tiled WMS
 // source in OpenLayers or MapLibre.
 export function wmsTileRequest(layers, t) {
-  const names = layers.map((l) => `${cfg.WORKSPACE}:${l}`).join(',');
+  const names = layers.map(qualified).join(',');
+  const endpoint = cfg.WORKSPACE ? `${cfg.BASE_URL}/${cfg.WORKSPACE}/wms` : `${cfg.BASE_URL}/wms`;
   const url =
-    `${cfg.BASE_URL}/${cfg.WORKSPACE}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=${names}` +
+    `${endpoint}?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=${names}` +
     `&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX=${tileBbox3857(t.z, t.x, t.y)}&WIDTH=256&HEIGHT=256`;
   return { url, tags: { name: 'wms', layer: layers.join('+') } };
 }
@@ -117,6 +123,6 @@ export function featuresRequest(layer, tiles, limit = 1000) {
     Math.max(...boxes.map((b) => b[2])),
     Math.max(...boxes.map((b) => b[3])),
   ].map((v) => v.toFixed(5));
-  const url = `${cfg.BASE_URL}/ogc/features/v1/collections/${cfg.WORKSPACE}:${layer}/items?f=application/geo%2Bjson&limit=${limit}&bbox=${bbox.join(',')}`;
+  const url = `${cfg.BASE_URL}/ogc/features/v1/collections/${qualified(layer)}/items?f=application/geo%2Bjson&limit=${limit}&bbox=${bbox.join(',')}`;
   return { url, tags: { name: 'ogcapi-features', layer } };
 }

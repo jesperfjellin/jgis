@@ -1,7 +1,7 @@
 // Settings shared by all scenarios. Defaults are in defaults.json (also read by
 // the report); every setting can be overridden with an environment variable of
-// the same name (see loadtest/README.md). AREAS is a list of Norwegian towns,
-// [lon, lat, spread in degrees], for the OSM Norway data.
+// the same name (see loadtest/README.md). Layers and areas left empty are
+// filled in by discover.js, which run.sh runs before the test.
 
 const DEFAULTS = JSON.parse(open('./defaults.json'));
 
@@ -9,6 +9,8 @@ const env = (name) => (__ENV[name] !== undefined && __ENV[name] !== '' ? __ENV[n
 const list = (value) => value.split(',').map((s) => s.trim()).filter(Boolean);
 
 export const BASE_URL = env('BASE_URL');
+// Optional. When set, layer names are relative to it; otherwise they are
+// qualified names (workspace:layer).
 export const WORKSPACE = env('WORKSPACE');
 export const SEED = Number(env('SEED'));
 export const VUS = Number(env('VUS'));
@@ -33,7 +35,11 @@ export const VIEW_ROWS = Number(env('VIEW_ROWS'));
 
 // Zoom levels a user looks at, as zoom:weight.
 export const ZOOMS = list(env('ZOOMS')).map((s) => s.split(':').map(Number));
-export const AREAS = JSON.parse(env('AREAS'));
+// Where users look: [[lon, lat, spread in degrees], ...].
+export const AREAS = env('AREAS') ? JSON.parse(env('AREAS')) : [];
+if (AREAS.length === 0 || TILE_LAYERS.length === 0) {
+  throw new Error('No layers or areas: run the test with `make loadtest` (which discovers them) or set TILE_LAYERS, WMS_LAYERS, FEATURE_LAYERS and AREAS');
+}
 export const COLD_CACHE = env('COLD_CACHE') === 'true';
 
 export const ADMIN_USER = __ENV.GEOSERVER_ADMIN_USER || 'admin';

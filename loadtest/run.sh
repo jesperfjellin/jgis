@@ -39,6 +39,23 @@ to_seconds() {
 }
 warmup_s="$(to_seconds "${WARMUP:-}")"
 
+# --- Discovery: layers and areas not given as settings -----------------------
+# discover.js asks GeoServer what it publishes and where the data is. The result
+# is used by every run of this test and recorded in the context.
+discovered=()
+if [[ -z "${TILE_LAYERS:-}" || -z "${WMS_LAYERS:-}" || -z "${FEATURE_LAYERS:-}" || -z "${AREAS:-}" ]]; then
+  echo "=== Discovering layers and areas"
+  "${COMPOSE[@]}" run --rm -e DISCOVERY_OUT="results/$id" k6 run --quiet discover.js >/dev/null
+  while IFS='=' read -r key value; do
+    [[ -z "$key" || "$key" == DISCOVERY_CACHED ]] && continue
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+      discovered+=("$key")
+    fi
+  done < "$dir/discovery.env"
+  grep -q '^DISCOVERY_CACHED=true' "$dir/discovery.env" && echo "    (reused cached discovery; delete loadtest/results/.discovery-cache.json to redo it)"
+fi
+
 # --- Run context, shared by all repeats ------------------------------------
 # One KEY=value per line; read by report.py.
 {
@@ -46,10 +63,12 @@ warmup_s="$(to_seconds "${WARMUP:-}")"
   echo "SCENARIO=$SCENARIO"
   echo "REPEAT=$REPEAT"
   echo "PROFILE=${PROFILE:-}"
-  # Settings given on the command line; report.py fills in the rest from defaults.json.
+  # Settings given on the command line or discovered; report.py fills in the
+  # rest from defaults.json.
   for v in VUS DURATION WARMUP SEED COLD_CACHE TILE_FORMAT TILE_LAYERS WMS_LAYERS FEATURE_LAYERS \
            ZOOMS AREAS VIEW_COLS VIEW_ROWS THINK_MIN THINK_MAX BASE_URL WORKSPACE; do
-    [[ -n "${!v:-}" ]] && echo "SETTING_$v=${!v}"
+    [[ -z "${!v:-}" ]] && continue
+    if [[ " ${discovered[*]} " == *" $v "* ]]; then echo "DISCOVERED_$v=${!v}"; else echo "SETTING_$v=${!v}"; fi
   done
   echo "GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   echo "GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"

@@ -32,6 +32,8 @@ services:
       THINK_MAX:
       BASE_URL:
       WORKSPACE:
+      DISCOVERY_AREAS:
+      DISCOVERY_SPREAD:
     volumes:
       - ./loadtest:/loadtest
     depends_on:
@@ -52,6 +54,10 @@ services:
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       LOKI_URL: http://loki:3100
+      # The database GeoServer reads from, and the role it connects as, for the
+      # PostgreSQL sections of the report.
+      DB_NAME: ${LOADTEST_DB_NAME:-gis}
+      DB_ROLE: ${LOADTEST_DB_ROLE:-geoserver}
     volumes:
       - ./loadtest:/loadtest
     depends_on:
