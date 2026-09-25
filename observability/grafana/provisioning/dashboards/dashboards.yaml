@@ -7,3 +7,11 @@ providers:
     allowUiUpdates: false
     options:
       path: /var/lib/grafana/dashboards
+
+  # Dashboard for the load tests, kept in loadtest/grafana/.
+  - name: jgis-loadtest
+    folder: JGIS load tests
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards-loadtest
