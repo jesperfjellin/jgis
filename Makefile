@@ -3,6 +3,12 @@ SHELL := bash
 ENV_FILE := environments/.env
 COMPOSE := docker compose --env-file $(ENV_FILE)
 
+# BuildKit attaches a provenance attestation that differs on every build, so a
+# fully cached build still gets a new image ID and Compose recreates the
+# container. The `provenance: false` build key in the Compose file does not
+# prevent this (Compose v5.1); this variable does.
+export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
+
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -15,8 +21,11 @@ $(ENV_FILE):
 
 env: $(ENV_FILE) ## Create environments/.env with generated passwords (if missing)
 
-up: $(ENV_FILE) ## Start the stack, import data if missing, apply the GeoServer catalog
+up: $(ENV_FILE) ## Start or rebuild the stack, import data if missing, apply the GeoServer catalog
 	$(COMPOSE) up -d --build --wait
+	@# GeoLibre renders its templates from the bind-mounted geolibre/ directory at
+	@# startup. Edits there don't change the container config, so recreate it.
+	$(COMPOSE) up -d --force-recreate --no-deps --wait geolibre
 	@if [ "$$($(COMPOSE) exec -T postgis psql -U postgres -d gis -tAc "SELECT to_regclass('public.osm_import') IS NOT NULL")" != "t" ]; then \
 		echo "No OSM data found, importing"; \
 		$(MAKE) --no-print-directory load-data; \

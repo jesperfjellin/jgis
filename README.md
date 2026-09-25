@@ -47,7 +47,12 @@ make up
 4. Applies the GeoServer configuration with Terraform.
 5. Prints the service addresses (also available with `make urls`).
 
-Later runs skip the download and the import. Running `make up` again is safe.
+Later runs skip the download and the import. `make up` is also the command for
+rebuilding: it rebuilds images whose files changed (using the Docker build
+cache), recreates the containers whose image or config changed, and always
+recreates the GeoLibre container. The database volume is kept, so the data is
+not imported again. Only `make reset` (deletes all volumes) or `make load-data`
+trigger a new import.
 
 When it has finished:
 
@@ -64,7 +69,7 @@ The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 
 | Command          | Description                                                         |
 |------------------|---------------------------------------------------------------------|
-| `make up`        | Start the stack, import data if missing, apply the GeoServer config |
+| `make up`        | Start or rebuild the stack, import data if missing, apply the GeoServer config |
 | `make down`      | Stop the stack. Data is kept.                                       |
 | `make load-data` | Import the OSM data again. Replaces the tables in the `osm` schema. |
 | `make bootstrap` | Apply the GeoServer config again                                    |
@@ -185,8 +190,8 @@ same data through different GeoServer paths, so they can be compared:
 
 Buildings are drawn from zoom 14 and roads from zoom 7, matching the scale
 limits in their GeoServer styles. Changes made in GeoLibre are not written back
-to the template. To change the default project, edit the template and run
-`docker compose --env-file environments/.env restart geolibre`.
+to the template. To change the default project or the service catalog, edit the
+template and run `make up`, which always recreates the GeoLibre container.
 
 ### Adding layers in GeoLibre
 
