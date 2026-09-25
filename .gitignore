@@ -22,6 +22,10 @@ terraform/.terraform/
 *.tfplan
 crash.log
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Editor, OS and local tooling
 .claude/
 .vscode/
