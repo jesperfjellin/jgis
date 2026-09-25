@@ -170,7 +170,11 @@ The loop for improving a stack:
 
 ## Comparing
 
-`BASE=<id>` compares the test with an earlier one. For each key metric, the
+`BASE=<id>` compares the test with an earlier one. It also reuses the
+baseline's discovered layers and areas, so both tests request the same
+workload even if discovery would now pick different areas (for example after a
+re-import changes the order of features). The comparison warns when the two
+tests' workloads differ. For each key metric, the
 comparison shows both medians, the change and a verdict: `better`, `worse`, or
 `same` when the change is within 10% or within the run-to-run spread of either
 test, whichever is larger. It warns when the tests ran on different hardware,

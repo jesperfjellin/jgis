@@ -57,7 +57,11 @@ export function setup() {
   if (tileIds.length === 0) throw new Error(`No vector tile layers found${WORKSPACE ? ` in workspace ${WORKSPACE}` : ''}`);
 
   // Bump VERSION when the discovery method changes, so old cache entries are not reused.
-  const key = JSON.stringify({ VERSION: 2, BASE_URL, WORKSPACE, SEED, AREA_COUNT, AREA_SPREAD, tileIds, featureIds });
+  // GeoServer does not list collections in a fixed order, so the ids are sorted for the key.
+  const key = JSON.stringify({
+    VERSION: 2, BASE_URL, WORKSPACE, SEED, AREA_COUNT, AREA_SPREAD,
+    tileIds: [...tileIds].sort(), featureIds: [...featureIds].sort(),
+  });
   if (cached && cached.key === key) return { ...cached.result, cached: true };
 
   // Zoom range and bounds per tile layer.

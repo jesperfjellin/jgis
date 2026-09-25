@@ -18,7 +18,8 @@ The next step is an OOM kill. For the JVM, memory near the limit also means litt
 ## Remedies
 
 - Raise the limit, or lower the heap/buffers inside it.
-- For PostgreSQL, page cache inside the container counts towards the limit but is reclaimable; check whether the peak is cache or process memory before raising it.
+- Check whether the peak is process memory or page cache before raising the limit. The reported number includes the container's active page cache (for example GeoWebCache writing tiles, or PostgreSQL reading tables), which the kernel reclaims before it kills a process. `docker exec <container> cat /sys/fs/cgroup/memory.stat` shows `anon` (process memory) and `file` (page cache).
+- With `PROFILE=true`, JFR's recording buffers add memory to the JVM. A container that is near its limit only in profiled runs is usually fine in normal operation.
 
 ## Verify
 

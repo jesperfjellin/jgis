@@ -781,6 +781,12 @@ def cmd_compare(base_dir, test_dir):
         warnings.append("The two tests ran with different CPU or memory for Docker.")
     if bs["PROFILE"] != ts["PROFILE"]:
         warnings.append("Only one of the tests ran with PROFILE=true. JFR profiling costs CPU, so latency and throughput are not comparable.")
+    workload = [k for k in ("TILE_LAYERS", "WMS_LAYERS", "FEATURE_LAYERS", "AREAS", "ZOOMS", "SEED", "SCENARIO") if bs.get(k) != ts.get(k)]
+    if bc.get("SCENARIO") != tc.get("SCENARIO"):
+        workload.append("SCENARIO")
+    if workload:
+        warnings.append(f"The tests requested different workloads ({', '.join(sorted(set(workload)))} differ), so differences are not "
+                        "caused by the change alone. Run the test with BASE=<baseline> so it reuses the baseline's layers and areas.")
     if min(base["runs"], test["runs"]) < 3:
         warnings.append("Fewer than 3 runs on one side: the noise estimate is weak. Use REPEAT=3 or more for decisions.")
     for w in reversed(warnings):

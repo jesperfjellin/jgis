@@ -42,8 +42,28 @@ warmup_s="$(to_seconds "${WARMUP:-}")"
 # --- Discovery: layers and areas not given as settings -----------------------
 # discover.js asks GeoServer what it publishes and where the data is. The result
 # is used by every run of this test and recorded in the context.
+#
+# With BASE, the baseline's discovered layers and areas are reused instead, so
+# both tests request the same workload. Discovering again could pick different
+# areas (for example after a re-import changes the order of features), and the
+# comparison would then measure a different workload, not the change.
 discovered=()
+discovery_source=""
+if [[ -n "${BASE:-}" ]]; then
+  base_context="loadtest/results/$BASE/context.env"
+  [[ -f "$base_context" ]] || { echo "BASE '$BASE' not found: $base_context" >&2; exit 1; }
+  while IFS='=' read -r key value; do
+    [[ "$key" == DISCOVERED_* ]] || continue
+    key="${key#DISCOVERED_}"
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+      discovered+=("$key")
+    fi
+  done < "$base_context"
+  (( ${#discovered[@]} > 0 )) && discovery_source="base:$BASE" && echo "=== Reusing layers and areas from $BASE"
+fi
 if [[ -z "${TILE_LAYERS:-}" || -z "${WMS_LAYERS:-}" || -z "${FEATURE_LAYERS:-}" || -z "${AREAS:-}" ]]; then
+  discovery_source="discovery"
   echo "=== Discovering layers and areas"
   "${COMPOSE[@]}" run --rm -e DISCOVERY_OUT="results/$id" k6 run --quiet discover.js >/dev/null
   while IFS='=' read -r key value; do
@@ -63,6 +83,7 @@ fi
   echo "SCENARIO=$SCENARIO"
   echo "REPEAT=$REPEAT"
   echo "PROFILE=${PROFILE:-}"
+  echo "DISCOVERY_SOURCE=$discovery_source"
   # Settings given on the command line or discovered; report.py fills in the
   # rest from defaults.json.
   for v in VUS DURATION WARMUP SEED COLD_CACHE TILE_FORMAT TILE_LAYERS WMS_LAYERS FEATURE_LAYERS \
