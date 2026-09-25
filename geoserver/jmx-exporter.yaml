@@ -1,0 +1,23 @@
+# JVM metrics (memory, GC, threads) are always exported by the agent. From the
+# MBeans, only export Tomcat's request processor and thread pool.
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+includeObjectNames:
+  - "Catalina:type=GlobalRequestProcessor,*"
+  - "Catalina:type=ThreadPool,*"
+rules:
+  - pattern: 'Catalina<type=GlobalRequestProcessor, name="([^"]+)"><>(requestCount|errorCount|processingTime|bytesSent|bytesReceived)'
+    name: tomcat_requestprocessor_$2_total
+    labels:
+      connector: "$1"
+    type: COUNTER
+  - pattern: 'Catalina<type=GlobalRequestProcessor, name="([^"]+)"><>maxTime'
+    name: tomcat_requestprocessor_max_time_ms
+    labels:
+      connector: "$1"
+    type: GAUGE
+  - pattern: 'Catalina<type=ThreadPool, name="([^"]+)"><>(currentThreadCount|currentThreadsBusy|maxThreads|connectionCount|maxConnections)'
+    name: tomcat_threadpool_$2
+    labels:
+      connector: "$1"
+    type: GAUGE

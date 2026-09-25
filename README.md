@@ -16,7 +16,7 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 | Part                                             | State       |
 |--------------------------------------------------|-------------|
 | PostGIS, OSM data loader, GeoServer, Terraform   | Done        |
-| Metrics and logs (Prometheus, Grafana, Loki)     | Not started |
+| Metrics and logs (Prometheus, Grafana, Loki)     | Done        |
 | Load tests (k6) and baseline measurements        | Not started |
 | Browser client for visual checks (GeoLibre)      | Done        |
 
@@ -26,7 +26,7 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 - Docker with Docker Compose v2
 - GNU Make and OpenSSL
 - About 12 GB of free disk space (database plus the downloaded extract)
-- About 4 GB of RAM available to Docker
+- About 5 GB of RAM available to Docker
 
 ## Setup
 
@@ -38,9 +38,10 @@ make up
 
 `make up` does the following:
 
-1. Creates `environments/.env` from `environments/.env.example`, with random
-   passwords, if the file does not exist.
-2. Builds the images and starts PostGIS, GeoServer and GeoLibre.
+1. Creates `environments/.env` from `environments/.env.example` if it does not
+   exist, adds settings that are new in `.env.example`, and generates random
+   values for empty passwords.
+2. Builds the images and starts all services.
 3. If the database has no OSM data, downloads the Norway extract (1.4 GB,
    cached in `data/cache/`) and imports it. This takes about 10 minutes on a
    recent machine.
@@ -49,9 +50,8 @@ make up
 
 Later runs skip the download and the import. `make up` is also the command for
 rebuilding: it rebuilds images whose files changed (using the Docker build
-cache), recreates the containers whose image or config changed, and always
-recreates the GeoLibre container. The database volume is kept, so the data is
-not imported again. Only `make reset` (deletes all volumes) or `make load-data`
+cache) and recreates the containers whose image, settings or config files
+changed. The database volume is kept, so the data is not imported again. Only `make reset` (deletes all volumes) or `make load-data`
 trigger a new import.
 
 When it has finished:
@@ -62,6 +62,8 @@ When it has finished:
 | GeoLibre  | http://127.0.0.1:8086/?url=http://127.0.0.1:8086/projects/osm.geolibre.json | none |
 | PostGIS   | `127.0.0.1:5440`, database `gis`     | `postgres` / `POSTGRES_PASSWORD`       |
 |           |                                      | `geoserver` / `GEOSERVER_DB_PASSWORD` (read-only) |
+| Grafana   | http://127.0.0.1:8087                | none to view; `admin` / `GRAFANA_ADMIN_PASSWORD` to edit |
+| Prometheus| http://127.0.0.1:8088                | none                                   |
 
 The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 
@@ -91,6 +93,9 @@ options.
 | `POSTGIS_PORT`             | `5440`                                                    |
 | `GEOSERVER_PORT`           | `8085`                                                    |
 | `GEOLIBRE_PORT`            | `8086`                                                    |
+| `GRAFANA_PORT`             | `8087`                                                    |
+| `PROMETHEUS_PORT`          | `8088`                                                    |
+| `PROMETHEUS_RETENTION`     | `15d`                                                     |
 | `GEOSERVER_VERSION`        | `3.0.1`                                                   |
 | `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
 | `PG_SHARED_BUFFERS`        | `1GB`                                                     |
@@ -107,13 +112,15 @@ extract, delete the file there first.
 ## Repository layout
 
 ```
-docker-compose.yml   Services: postgis, geoserver, geolibre. One-off jobs: loader, bootstrap.
+docker-compose.yml   Services: postgis, geoserver, geolibre, prometheus, loki, alloy,
+                     postgres-exporter, grafana. One-off jobs: loader, bootstrap.
 environments/        .env.example (committed) and .env (local, ignored by git)
 db/init/             Runs once on a new database: extensions, "osm" schema, read-only role
 data/                Loader image: osm2pgsql style (osm.lua) and post-import SQL
-geoserver/           GeoServer image with extensions installed at build time
+geoserver/           GeoServer image: extensions, JMX exporter, JSON access log
 geolibre/            GeoLibre project template and container entrypoint
 terraform/           GeoServer config: workspace, datastore, layers, styles, tile cache
+observability/       Alloy, Loki, Prometheus and Grafana config; dashboards as JSON
 ```
 
 ## Data
@@ -191,7 +198,8 @@ same data through different GeoServer paths, so they can be compared:
 Buildings are drawn from zoom 14 and roads from zoom 7, matching the scale
 limits in their GeoServer styles. Changes made in GeoLibre are not written back
 to the template. To change the default project or the service catalog, edit the
-template and run `make up`, which always recreates the GeoLibre container.
+template and run `make up`, which recreates the GeoLibre container when the
+templates change.
 
 ### Adding layers in GeoLibre
 
@@ -214,6 +222,39 @@ http://127.0.0.1:8085/geoserver/ogc/tiles/v1/collections/osm:roads/tiles/WebMerc
 
 GeoLibre runs from an unreleased main-branch image (`sha-e9df9e2`), because the
 service catalog is not in a release yet (latest is `v3.0.0`).
+
+## Observability
+
+Every request to GeoServer is timed, and GeoServer, the JVM and PostgreSQL are
+monitored. The results are in Grafana at http://127.0.0.1:8087, in three
+dashboards:
+
+| Dashboard          | Shows                                                                        |
+|--------------------|------------------------------------------------------------------------------|
+| GeoServer requests | Requests per second, P50/P95/P99 latency per service, tile cache hit ratio, cache hit vs miss latency, status codes, bytes sent, per-layer latency, slowest requests |
+| GeoServer JVM      | Heap, GC time, memory pools, CPU, Tomcat and JVM threads, GeoServer warnings |
+| PostGIS            | Connections, transactions, rows scanned vs returned, buffer cache hit ratio, temp files, top queries by total time, slow query plans |
+
+How the data is collected:
+
+| Source | Collected by | Stored in |
+|--------|--------------|-----------|
+| Tomcat access log, one JSON line per request with duration and GeoWebCache cache result | Alloy, which turns it into the `geoserver_request_duration_seconds` histogram (labels `service`, `cache`, `status_class`) | Prometheus (metrics), Loki (raw lines, with the layer name) |
+| JVM and Tomcat MBeans | JMX exporter agent in the GeoServer JVM (`geoserver:9404`) | Prometheus |
+| `pg_stat_database`, `pg_stat_activity`, `pg_stat_statements` | postgres_exporter | Prometheus |
+| Container logs, including PostgreSQL `auto_explain` plans for statements over 500 ms | Alloy, through the Docker socket | Loki |
+
+`service` is derived from the request path: `ogcapi-tiles`, `ogcapi-maptiles`,
+`ogcapi-features`, `wms`, `wfs`, `wmts`, `tms`, `rest`, `web` or `other`. The
+Docker healthcheck requests show up as `web` and are excluded from the
+dashboards by default.
+
+Metrics are kept for 15 days (`PROMETHEUS_RETENTION`), logs for 7 days.
+Dashboards and data sources are provisioned from `observability/grafana/` and
+cannot be changed in the UI; edit the JSON files instead. Grafana picks up
+dashboard changes within about 10 seconds.
+
+Alloy needs read access to `/var/run/docker.sock` to collect container logs.
 
 ## License
 

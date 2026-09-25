@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # JVM and Tomcat metrics from the JMX exporter agent.
+  - job_name: geoserver-jvm
+    static_configs:
+      - targets: ["geoserver:9404"]
+
+  # Request metrics derived from the GeoServer access log.
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]

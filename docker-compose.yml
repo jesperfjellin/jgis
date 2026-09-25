@@ -82,10 +82,14 @@ services:
       CORS_ENABLED: "true"
       GEOSERVER_ADMIN_USER: admin
       GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?set in .env}
-      EXTRA_JAVA_OPTS: ${GEOSERVER_JAVA_OPTS:--Xms1g -Xmx2g}
+      EXTRA_JAVA_OPTS: >-
+        ${GEOSERVER_JAVA_OPTS:--Xms1g -Xmx2g}
+        -javaagent:/opt/jmx/jmx_prometheus_javaagent.jar=9404:/opt/jmx/config.yaml
       HEALTHCHECK_URL: http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png
     volumes:
       - geoserver_data:/opt/geoserver_data
+      # Tomcat logs, including the JSON access log read by Alloy.
+      - geoserver_logs:/usr/local/tomcat/logs
     depends_on:
       postgis:
         condition: service_healthy
@@ -97,6 +101,10 @@ services:
     # next release tag once it includes it.
     image: ghcr.io/opengeos/geolibre:sha-e9df9e2
     restart: unless-stopped
+    # Changes when its bind-mounted config changes (see Makefile), which makes
+    # Compose recreate the container.
+    labels:
+      jgis.config-hash: ${GEOLIBRE_CONFIG_HASH:-}
     entrypoint: ["/opt/jgis/entrypoint.sh"]
     ports:
       - "127.0.0.1:${GEOLIBRE_PORT:-8086}:80"
@@ -112,6 +120,117 @@ services:
       GEOLIBRE_BUILTIN_SERVICES: "off"
     volumes:
       - ./geolibre:/opt/jgis:ro
+
+  # --- Observability ---------------------------------------------------------
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    # Changes when its bind-mounted config changes (see Makefile), which makes
+    # Compose recreate the container.
+    labels:
+      jgis.config-hash: ${PROMETHEUS_CONFIG_HASH:-}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-8088}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  loki:
+    image: grafana/loki:3.7.8
+    restart: unless-stopped
+    # Changes when its bind-mounted config changes (see Makefile), which makes
+    # Compose recreate the container.
+    labels:
+      jgis.config-hash: ${LOKI_CONFIG_HASH:-}
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+
+  # Tails the GeoServer access log (request metrics + logs) and all container
+  # logs of this Compose project, and ships them to Loki.
+  alloy:
+    image: grafana/alloy:v1.19.2
+    restart: unless-stopped
+    # Changes when its bind-mounted config changes (see Makefile), which makes
+    # Compose recreate the container.
+    labels:
+      jgis.config-hash: ${ALLOY_CONFIG_HASH:-}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      COMPOSE_PROJECT: jgis
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - geoserver_logs:/logs/geoserver:ro
+      - alloy_data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.include_query
+      - --collector.stat_statements.query_length=200
+      - --collector.stat_statements.limit=50
+    environment:
+      DATA_SOURCE_URI: postgis:5432/gis?sslmode=disable
+      DATA_SOURCE_USER: postgres
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?set in environments/.env}
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    # Changes when its bind-mounted config changes (see Makefile), which makes
+    # Compose recreate the container.
+    labels:
+      jgis.config-hash: ${GRAFANA_CONFIG_HASH:-}
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-8087}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in environments/.env}
+      # Dashboards can be viewed without logging in; editing needs the admin login.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/geoserver-requests.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   # One-shot: applies the Terraform-managed GeoServer catalog. Run by `make up`.
   bootstrap:
@@ -132,4 +251,9 @@ services:
 volumes:
   postgis_data:
   geoserver_data:
+  geoserver_logs:
+  prometheus_data:
+  loki_data:
+  alloy_data:
+  grafana_data:
   terraform_state:

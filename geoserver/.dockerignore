@@ -1,2 +1,3 @@
-# The image only needs the Dockerfile; nothing is copied from this directory.
+# The image only needs the Dockerfile and the JMX exporter config.
 *
+!jmx-exporter.yaml
