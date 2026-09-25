@@ -1,5 +1,6 @@
 # AI and internal docs
-GOAL.md 
+GOAL.md
+CLAUDE.md
 
 # Local environment and secrets: only the template is committed.
 environments/*
