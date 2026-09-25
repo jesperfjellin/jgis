@@ -62,6 +62,12 @@
       "type": "link",
       "url": "/d/jgis-postgis",
       "keepTime": true
+    },
+    {
+      "title": "Load test",
+      "type": "link",
+      "url": "/d/jgis-loadtest",
+      "keepTime": true
     }
   ],
   "panels": [

@@ -134,6 +134,8 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      # Lets the load tests (loadtest/) push k6 results into Prometheus.
+      - --web.enable-remote-write-receiver
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-8088}:9090"
     volumes:
@@ -220,6 +222,7 @@ services:
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./loadtest/grafana:/var/lib/grafana/dashboards-loadtest:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       prometheus:

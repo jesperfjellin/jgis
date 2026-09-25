@@ -17,7 +17,8 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 |--------------------------------------------------|-------------|
 | PostGIS, OSM data loader, GeoServer, Terraform   | Done        |
 | Metrics and logs (Prometheus, Grafana, Loki)     | Done        |
-| Load tests (k6) and baseline measurements        | Not started |
+| Load tests (k6)                                  | Done        |
+| Baseline measurements and tuning                 | Not started |
 | Browser client for visual checks (GeoLibre)      | Done        |
 
 ## Requirements
@@ -76,6 +77,7 @@ The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 | `make load-data` | Import the OSM data again. Replaces the tables in the `osm` schema. |
 | `make bootstrap` | Apply the GeoServer config again                                    |
 | `make urls`      | Print the service addresses                                         |
+| `make loadtest`  | Run a k6 load test against the stack, see [loadtest/README.md](loadtest/README.md) |
 | `make psql`      | Open psql as `postgres`                                             |
 | `make logs`      | Follow the logs. `SERVICE=geoserver` limits it to one service.      |
 | `make reset`     | Stop the stack and delete all volumes (database and GeoServer config) |
@@ -121,6 +123,7 @@ geoserver/           GeoServer image: extensions, JMX exporter, JSON access log
 geolibre/            GeoLibre project template and container entrypoint
 terraform/           GeoServer config: workspace, datastore, layers, styles, tile cache
 observability/       Alloy, Loki, Prometheus and Grafana config; dashboards as JSON
+loadtest/            k6 load tests, self-contained (see loadtest/README.md)
 ```
 
 ## Data
@@ -255,6 +258,13 @@ cannot be changed in the UI; edit the JSON files instead. Grafana picks up
 dashboard changes within about 10 seconds.
 
 Alloy needs read access to `/var/run/docker.sock` to collect container logs.
+
+## Load tests
+
+`loadtest/` contains k6 scenarios that simulate users browsing a map (OGC API
+tiles, WMS, OGC API Features, or a mix). Run them with `make loadtest`; results
+appear in the **Load test** Grafana dashboard. See
+[loadtest/README.md](loadtest/README.md).
 
 ## License
 

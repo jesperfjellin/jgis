@@ -1,4 +1,4 @@
-.PHONY: help env up urls bootstrap down load-data psql logs reset
+.PHONY: help env up urls bootstrap down load-data psql logs reset loadtest
 SHELL := bash
 .DEFAULT_GOAL := help
 ENV_FILE := environments/.env
@@ -64,6 +64,27 @@ load-data: env ## Download (if needed) and import OSM data into PostGIS
 	$(COMPOSE) run --rm --build loader
 	@# Clear GeoServer's cached table structures, if GeoServer is running.
 	@$(COMPOSE) exec -T geoserver sh -c 'curl -sf -o /dev/null -u "admin:$$GEOSERVER_ADMIN_PASSWORD" -X POST http://localhost:8080/geoserver/rest/reset' 2>/dev/null || true
+
+SCENARIO ?= tiles
+LOADTEST_VARS := VUS DURATION SEED COLD_CACHE TILE_FORMAT TILE_LAYERS WMS_LAYERS FEATURE_LAYERS \
+	ZOOMS AREAS VIEW_COLS VIEW_ROWS THINK_MIN THINK_MAX BASE_URL WORKSPACE
+export $(LOADTEST_VARS)
+export HOST_UID := $(shell id -u)
+export HOST_GID := $(shell id -g)
+
+loadtest: env ## Run a load test: SCENARIO=tiles|wms|features|mixed [VUS=10 DURATION=2m ...], see loadtest/README.md
+	@test -f loadtest/scenarios/$(SCENARIO).js || { echo "Unknown SCENARIO '$(SCENARIO)', see loadtest/scenarios/"; exit 1; }
+	@mkdir -p loadtest/results
+	@set -a; . ./$(ENV_FILE); set +a; \
+	testid="$$(date -u +%Y%m%dT%H%M%SZ)-$(SCENARIO)"; start=$$(( $$(date +%s) - 30 ))000; \
+	echo "Test id: $$testid"; \
+	$(COMPOSE) -f docker-compose.yml -f loadtest/compose.yaml --profile loadtest run --rm k6 run --quiet \
+		--out experimental-prometheus-rw --tag testid=$$testid \
+		--summary-export results/$$testid.json scenarios/$(SCENARIO).js; \
+	status=$$?; end=$$(( $$(date +%s) + 30 ))000; \
+	echo "Summary: loadtest/results/$$testid.json"; \
+	echo "Grafana: http://127.0.0.1:$${GRAFANA_PORT:-8087}/d/jgis-loadtest?var-testid=$$testid&from=$$start&to=$$end"; \
+	exit $$status
 
 psql: ## Open psql in the PostGIS container
 	$(COMPOSE) exec postgis psql -U postgres -d gis
