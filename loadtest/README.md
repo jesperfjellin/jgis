@@ -1,9 +1,15 @@
 # Load tests
 
-k6 scenarios that put load on GeoServer the way map clients do, and a report
-for each test that combines the client's view with GeoServer, JVM, PostgreSQL
-and container metrics, logs and an optional CPU profile. The report is plain
-Markdown and JSON, so it can be read by a person or a coding agent.
+A pipeline for finding and fixing GeoServer performance problems, for any
+GeoServer and data: k6 scenarios that put load on GeoServer the way map clients
+do, a report for each test that combines the client's view with GeoServer, JVM,
+PostgreSQL and container metrics, logs and an optional CPU profile, findings
+with stable ids, and a [playbook](playbook/README.md) of causes and remedies
+for each finding. Reports are plain Markdown and JSON, so they can be read by a
+person or a coding agent.
+
+Nothing is specific to the data in this repository: the layers to test and the
+areas to look at are discovered from GeoServer (see [Discovery](#discovery)).
 
 Everything runs in containers on the stack's Docker network (k6 2.3.0, Python
 3.13 for the report); there is nothing to install. The stack must be running
@@ -46,6 +52,30 @@ is 6 × 4 tiles of 256 px, roughly a 1536 × 1024 map.
 The views are generated from a seeded random number generator (`SEED`): the
 same settings give the same sequence of requests, so runs can be compared.
 
+## Discovery
+
+Before a test, `discover.js` asks GeoServer what to test, for any setting that
+is not given explicitly:
+
+- `TILE_LAYERS` and `WMS_LAYERS`: all OGC API Tiles collections with vector
+  tiles (in `WORKSPACE`, if set).
+- `FEATURE_LAYERS`: all OGC API Features collections.
+- `AREAS`: centres of randomly sampled features. Layers are picked in
+  proportion to their feature count, then a random feature, so areas follow the
+  data: dense places come up more often, as with real users. Samples closer
+  than 0.1° are merged; up to 10 areas are kept.
+
+The result is written to `results/<id>/discovery.json` and recorded in the
+report's context. Sampling reads deep pages of large tables and can take a few
+minutes, so it is cached in `results/.discovery-cache.json` and reused while
+GeoServer publishes the same collections and the seed and discovery settings
+are unchanged. Delete the cache file to redo it.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `DISCOVERY_AREAS` | `10` | Maximum number of areas |
+| `DISCOVERY_SPREAD` | `0.1` | Area size in degrees (how far users pan around its centre) |
+
 ## Settings
 
 Pass them to `make loadtest` as `NAME=value`. Scenario defaults are in
@@ -65,15 +95,17 @@ Pass them to `make loadtest` as `NAME=value`. Scenario defaults are in
 | `TESTID`         | timestamp-scenario | Name of the test and its results directory |
 | `SEED`           | `1`     | Seed for the generated views |
 | `TILE_FORMAT`    | `vector`| `vector` or `map` |
-| `TILE_LAYERS`    | `landcover,water,waterways,roads,railways,buildings` | Layers requested as tiles |
-| `WMS_LAYERS`     | `landcover,water,roads,buildings,places` | Layers combined in each GetMap |
-| `FEATURE_LAYERS` | `places,pois,railways` | Layers requested as features |
+| `TILE_LAYERS`    | discovered | Layers requested as tiles, comma-separated |
+| `WMS_LAYERS`     | discovered | Layers combined in each GetMap |
+| `FEATURE_LAYERS` | discovered | Layers requested as features |
 | `ZOOMS`          | `8:1,10:2,12:3,13:3,14:4,15:3,16:2` | Zoom levels users land on, as `zoom:weight` |
-| `AREAS`          | 10 Norwegian towns | JSON list of `[lon, lat, spread in degrees]` |
+| `AREAS`          | discovered | JSON list of `[lon, lat, spread in degrees]` |
 | `VIEW_COLS`, `VIEW_ROWS` | `6`, `4` | Viewport size in tiles |
 | `THINK_MIN`, `THINK_MAX` | `1`, `3` | Seconds between views |
-| `WORKSPACE`      | `osm`   | GeoServer workspace |
+| `WORKSPACE`      | none    | Limit discovery to one workspace; layer names are then relative to it |
 | `BASE_URL`       | `http://geoserver:8080/geoserver` | GeoServer, as seen from the k6 container |
+| `LOADTEST_DB_NAME` | `gis` | Database GeoServer reads from (PostgreSQL sections of the report) |
+| `LOADTEST_DB_ROLE` | `geoserver` | Role GeoServer connects as (top statements are filtered to it) |
 
 ## The report
 
@@ -81,10 +113,14 @@ Pass them to `make loadtest` as `NAME=value`. Scenario defaults are in
 
 - **Context:** git commit and uncommitted changes, CPUs and memory available to
   Docker, host CPU, settings that differ from the defaults.
-- **Findings:** rule-of-thumb flags that point at where to look, for example a
-  high cache hit ratio (the run measured the cache, not rendering), cache hits
-  waiting on metatile renders, CPU saturation, rows scanned per row returned,
-  frequent GeoServer warnings, and the largest CPU component in the profile.
+- **Findings:** rule-of-thumb flags with stable ids, each with a playbook
+  entry (`playbook/<id>.md`). They cover whether the measurement can be trusted
+  (host memory/CPU/IO pressure, OOM kills, failed requests), caching (cache hit
+  ratio, cache hits waiting on metatile renders), rendering (slow renders,
+  where server time concentrates, CPU profile signatures such as vector tile
+  simplification), GeoServer and the JVM (CPU, threads, GC, heap, log floods)
+  and PostgreSQL (rows scanned per row returned, buffer cache, temp files, slow
+  statements).
 - **Key metrics over all runs** (with `REPEAT` > 1): median, min, max and
   spread of throughput, latency percentiles, cache hit ratio, CPU, GC and
   database metrics.
@@ -93,8 +129,12 @@ Pass them to `make loadtest` as `NAME=value`. Scenario defaults are in
   - **Client (k6):** requests, failures and P50/P95/P99 per service and layer.
   - **GeoServer:** from the access log, per service, layer and cache result
     (hit, miss, none): requests, errors, P50/P95/P99, max and total time.
-  - **Resources:** GeoServer JVM CPU, heap, GC and Tomcat threads, and CPU and
-    memory per container (sampled with `docker stats`).
+  - **Resources:** GeoServer JVM CPU, heap, GC and Tomcat threads; CPU and
+    memory per container against its memory limit (sampled with `docker
+    stats`); containers that restarted or were OOM-killed; and the Docker
+    host's pressure counters: the share of the run in which tasks stalled
+    waiting for memory, CPU or IO. Memory stalls or OOM kills mean the machine,
+    not the stack, limited the results, and the report says so.
   - **PostgreSQL:** rows scanned vs returned, buffer cache hit ratio, temp
     files, connections, the top statements by total time with calls, mean time
     and rows per call, and the slowest `auto_explain` plans (over 500 ms).
@@ -111,6 +151,22 @@ Mission Control.
 The measured window is the run after `WARMUP`. The GeoServer, JVM, PostgreSQL
 and resource numbers cover everything in that window, so avoid other traffic
 (GeoLibre, other tests) while a test runs.
+
+## Playbook
+
+[`playbook/`](playbook/README.md) has one entry per finding id: what the signal
+means, why it matters, likely causes, remedies to try, and which metrics a
+comparison should show improving. The Evidence section of an entry records
+measured results of its remedies on the test bed.
+
+The loop for improving a stack:
+
+1. Run a baseline with `REPEAT=3` (and a profiled one with `PROFILE=true`).
+2. Pick the finding that affects the most time (`server-time-concentrated`,
+   `slow-render` and the profile findings point there), read its playbook entry.
+3. Apply one remedy, rerun with the same settings and `BASE=<baseline>`.
+4. Keep the remedy only if the metrics named in the entry come out `better` and
+   nothing comes out `worse`.
 
 ## Comparing
 
@@ -191,7 +247,9 @@ a `service` label with the Compose service name.
 run.sh         runs a test: context, repeats, profiling, resource samples, reports
 compose.yaml   k6 and report services, used together with the main docker-compose.yml
 scenarios/     one k6 script per scenario
+discover.js    finds layers and areas to test from GeoServer
 lib/           settings and defaults, tile maths, request builders, map session model
+playbook/      one entry per finding id: causes, remedies, how to verify
 report/        report.py: builds reports and comparisons (Python standard library only)
 grafana/       the Load test dashboard (provisioned by the main stack's Grafana)
 results/       one directory per test (ignored by git)

@@ -2,6 +2,7 @@
 # file (see `make loadtest`); paths are relative to the repository root.
 services:
   k6:
+    mem_limit: ${K6_MEM_LIMIT:-512m}
     image: grafana/k6:2.3.0
     profiles: [loadtest]
     # Writes the summary files into loadtest/results as the host user.
@@ -31,6 +32,8 @@ services:
       THINK_MAX:
       BASE_URL:
       WORKSPACE:
+      DISCOVERY_AREAS:
+      DISCOVERY_SPREAD:
     volumes:
       - ./loadtest:/loadtest
     depends_on:
@@ -42,6 +45,7 @@ services:
   # Builds reports from Prometheus, Loki and the files a run leaves in
   # loadtest/results/. Run by loadtest/run.sh.
   report:
+    mem_limit: ${REPORT_MEM_LIMIT:-256m}
     image: python:3.13.15-slim
     profiles: [loadtest]
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
@@ -50,6 +54,10 @@ services:
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       LOKI_URL: http://loki:3100
+      # The database GeoServer reads from, and the role it connects as, for the
+      # PostgreSQL sections of the report.
+      DB_NAME: ${LOADTEST_DB_NAME:-gis}
+      DB_ROLE: ${LOADTEST_DB_ROLE:-geoserver}
     volumes:
       - ./loadtest:/loadtest
     depends_on:

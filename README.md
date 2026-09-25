@@ -27,7 +27,8 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 - Docker with Docker Compose v2
 - GNU Make and OpenSSL
 - About 12 GB of free disk space (database plus the downloaded extract)
-- About 5 GB of RAM available to Docker
+- About 6 GB of RAM available to Docker. The stack itself stays within about
+  5.5 GB: every service has a memory limit (see [Memory](#memory)).
 
 ## Setup
 
@@ -101,12 +102,29 @@ options.
 | `LOKI_PORT`                | `8089`                                                    |
 | `PROMETHEUS_RETENTION`     | `15d`                                                     |
 | `GEOSERVER_VERSION`        | `3.0.1`                                                   |
-| `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
-| `PG_SHARED_BUFFERS`        | `1GB`                                                     |
-| `PG_EFFECTIVE_CACHE_SIZE`  | `3GB`                                                     |
 | `OSM_EXTRACT_URL`          | `https://download.geofabrik.de/europe/norway-latest.osm.pbf` |
 | `OSM2PGSQL_CACHE_MB`       | `1500`                                                    |
 | `OSM2PGSQL_PROCESSES`      | `4`                                                       |
+
+### Memory
+
+Every service has a hard memory limit, so the stack has a known footprint and
+a load test cannot take memory from the rest of the machine. The limits and the
+settings that must fit inside them are in `environments/.env`:
+
+| Variable                  | Default   | Notes |
+|---------------------------|-----------|-------|
+| `GEOSERVER_MEM_LIMIT`     | `2560m`   | Container limit |
+| `GEOSERVER_JAVA_OPTS`     | `-Xms512m -Xmx1536m` | Heap; leave about 1 GB of the limit for the JVM's own memory (class metadata, compiled code, thread stacks, buffers) |
+| `POSTGIS_MEM_LIMIT`       | `1536m`   | Container limit |
+| `PG_SHARED_BUFFERS`       | `512MB`   | PostgreSQL buffer cache |
+| `PG_EFFECTIVE_CACHE_SIZE` | `1GB`     | Planner hint for the OS file cache |
+| `GRAFANA_MEM_LIMIT`, `PROMETHEUS_MEM_LIMIT`, `LOKI_MEM_LIMIT`, `ALLOY_MEM_LIMIT` | `512m`, `256m`, `256m`, `256m` | |
+| `LOADER_MEM_LIMIT`        | `3g`      | OSM import only (osm2pgsql cache `OSM2PGSQL_CACHE_MB`) |
+
+With more memory, raise the GeoServer and PostgreSQL values together with their
+limits. Load test reports show each container's peak memory against its limit
+and flag containers that come close to it or are OOM-killed.
 
 To use a different area, set `OSM_EXTRACT_URL` to another
 [Geofabrik](https://download.geofabrik.de/) extract and run `make load-data`.
@@ -263,12 +281,16 @@ Alloy needs read access to `/var/run/docker.sock` to collect container logs.
 
 ## Load tests
 
-`loadtest/` contains k6 scenarios that simulate users browsing a map (OGC API
-tiles, WMS, OGC API Features, or a mix). `make loadtest` runs one and writes a
-report to `loadtest/results/<id>/report.md`: client and server latency per
-service, layer and cache result, JVM, container and PostgreSQL metrics, top SQL
-statements and slow plans, GeoServer warnings, and optionally a JFR CPU profile
-of GeoServer. Tests can be repeated to measure noise and compared with a
+`loadtest/` is a pipeline for finding and fixing GeoServer performance
+problems. It discovers the layers to test and the areas where the data is from
+GeoServer, so it is not tied to this repository's data. Its k6 scenarios
+simulate users browsing a map (OGC API tiles, WMS, OGC API Features, or a mix).
+`make loadtest` runs one and writes a report to
+`loadtest/results/<id>/report.md`, with findings that link to a playbook of
+causes and remedies (`loadtest/playbook/`). The report covers client and server
+latency per service, layer and cache result, JVM, container and PostgreSQL
+metrics, top SQL statements and slow plans, GeoServer warnings, and optionally
+a JFR CPU profile of GeoServer. Tests can be repeated to measure noise and compared with a
 baseline (`BASE=<id>`). Results also appear in the **Load test** Grafana
 dashboard. See [loadtest/README.md](loadtest/README.md).
 

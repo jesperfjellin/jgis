@@ -16,6 +16,8 @@ REPEAT="${REPEAT:-1}"
 COOLDOWN="${COOLDOWN:-15}"
 ENV_FILE="${ENV_FILE:-environments/.env}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f loadtest/compose.yaml --profile loadtest)
+# Compose project name (`name:` in docker-compose.yml); container names start with it.
+PROJECT="${PROJECT:-jgis}"
 
 [[ -f "loadtest/scenarios/$SCENARIO.js" ]] || { echo "Unknown SCENARIO '$SCENARIO', see loadtest/scenarios/" >&2; exit 1; }
 [[ "$REPEAT" =~ ^[1-9][0-9]*$ ]] || { echo "REPEAT must be a positive integer" >&2; exit 1; }
@@ -37,6 +39,23 @@ to_seconds() {
 }
 warmup_s="$(to_seconds "${WARMUP:-}")"
 
+# --- Discovery: layers and areas not given as settings -----------------------
+# discover.js asks GeoServer what it publishes and where the data is. The result
+# is used by every run of this test and recorded in the context.
+discovered=()
+if [[ -z "${TILE_LAYERS:-}" || -z "${WMS_LAYERS:-}" || -z "${FEATURE_LAYERS:-}" || -z "${AREAS:-}" ]]; then
+  echo "=== Discovering layers and areas"
+  "${COMPOSE[@]}" run --rm -e DISCOVERY_OUT="results/$id" k6 run --quiet discover.js >/dev/null
+  while IFS='=' read -r key value; do
+    [[ -z "$key" || "$key" == DISCOVERY_CACHED ]] && continue
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$value"
+      discovered+=("$key")
+    fi
+  done < "$dir/discovery.env"
+  grep -q '^DISCOVERY_CACHED=true' "$dir/discovery.env" && echo "    (reused cached discovery; delete loadtest/results/.discovery-cache.json to redo it)"
+fi
+
 # --- Run context, shared by all repeats ------------------------------------
 # One KEY=value per line; read by report.py.
 {
@@ -44,10 +63,12 @@ warmup_s="$(to_seconds "${WARMUP:-}")"
   echo "SCENARIO=$SCENARIO"
   echo "REPEAT=$REPEAT"
   echo "PROFILE=${PROFILE:-}"
-  # Settings given on the command line; report.py fills in the rest from defaults.json.
+  # Settings given on the command line or discovered; report.py fills in the
+  # rest from defaults.json.
   for v in VUS DURATION WARMUP SEED COLD_CACHE TILE_FORMAT TILE_LAYERS WMS_LAYERS FEATURE_LAYERS \
            ZOOMS AREAS VIEW_COLS VIEW_ROWS THINK_MIN THINK_MAX BASE_URL WORKSPACE; do
-    [[ -n "${!v:-}" ]] && echo "SETTING_$v=${!v}"
+    [[ -z "${!v:-}" ]] && continue
+    if [[ " ${discovered[*]} " == *" $v "* ]]; then echo "DISCOVERED_$v=${!v}"; else echo "SETTING_$v=${!v}"; fi
   done
   echo "GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   echo "GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
@@ -67,14 +88,25 @@ warmup_s="$(to_seconds "${WARMUP:-}")"
 
 geoserver_exec() { "${COMPOSE[@]}" exec -T -u tomcat geoserver "$@"; }
 
-# Samples CPU and memory of the stack's containers every few seconds.
+# Every few seconds: CPU and memory of the stack's containers, and the Docker
+# host's pressure counters (share of time tasks stalled waiting for memory,
+# CPU or IO). The counters are system-wide, so any container can read them.
 sample_resources() {
-  local out="$1"
+  local out="$1" pressure="$2"
   while true; do
     docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null \
-      | grep '^jgis-' | sed "s/^/$(date +%s)\t/" >> "$out" || true
+      | grep "^$PROJECT-" | sed "s/^/$(date +%s)\t/" >> "$out" || true
+    docker exec "$PROJECT-prometheus-1" sh -c \
+      'for r in memory cpu io; do echo "$r $(grep -o "total=[0-9]*" /proc/pressure/$r | cut -d= -f2 | paste -sd" " -)"; done' \
+      2>/dev/null | sed "s/^/$(date +%s) /" >> "$pressure" || true
     sleep 3
   done
+}
+
+# Restart count and OOM-kill flag of the stack's containers.
+container_state() {
+  docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' \
+    | xargs -r docker inspect --format '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}}' | sed 's|^/||'
 }
 
 for (( n = 1; n <= REPEAT; n++ )); do
@@ -90,7 +122,8 @@ for (( n = 1; n <= REPEAT; n++ )); do
       delay="${warmup_s}s" filename="$jfr_file" >/dev/null
   fi
 
-  sample_resources "$rdir/resources.tsv" &
+  container_state > "$rdir/containers-before.txt"
+  sample_resources "$rdir/resources.tsv" "$rdir/pressure.txt" &
   sampler=$!
   start=$(date +%s)
 
@@ -103,6 +136,7 @@ for (( n = 1; n <= REPEAT; n++ )); do
 
   end=$(date +%s)
   kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null || true
+  container_state > "$rdir/containers-after.txt"
 
   {
     echo "RUN=$n"
