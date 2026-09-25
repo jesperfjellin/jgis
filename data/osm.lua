@@ -6,6 +6,7 @@ local schema = 'osm'
 local tables = {}
 
 tables.buildings = osm2pgsql.define_area_table('buildings', {
+    { column = 'fid', type = 'int8', not_null = true },
     { column = 'type', type = 'text' },
     { column = 'name', type = 'text' },
     { column = 'height', type = 'real' },
@@ -37,6 +38,7 @@ tables.waterways = osm2pgsql.define_way_table('waterways', {
 }, { schema = schema })
 
 tables.water = osm2pgsql.define_area_table('water', {
+    { column = 'fid', type = 'int8', not_null = true },
     { column = 'class', type = 'text', not_null = true },
     { column = 'name', type = 'text' },
     { column = 'area', type = 'real' },
@@ -44,6 +46,7 @@ tables.water = osm2pgsql.define_area_table('water', {
 }, { schema = schema })
 
 tables.landcover = osm2pgsql.define_area_table('landcover', {
+    { column = 'fid', type = 'int8', not_null = true },
     { column = 'class', type = 'text', not_null = true },
     { column = 'area', type = 'real' },
     { column = 'geom', type = 'multipolygon', not_null = true },
@@ -116,7 +119,12 @@ end
 
 -- Areas shared by closed ways and multipolygon relations. "area" is measured in
 -- EPSG:3857 units (inflated at high latitudes); use it for relative filtering only.
-local function process_area(object, geom)
+--
+-- fid is the table's primary key (see post-import.sql). osm2pgsql's area_id is
+-- negative for relations, and GeoServer's vector tile encoder needs non-negative
+-- integer feature ids (MVT ids are unsigned); it logs a warning for every other
+-- feature. fid is way id * 2 or relation id * 2 + 1, so it is unique and >= 0.
+local function process_area(object, geom, fid)
     local tags = object.tags
     if tags.building and tags.building ~= 'no' then
         tables.buildings:insert({
@@ -125,18 +133,19 @@ local function process_area(object, geom)
             height = to_real(tags.height),
             levels = to_int(tags['building:levels']),
             area = geom:transform(3857):area(),
+            fid = fid,
             geom = geom,
         })
         return
     end
     local wc = water_class(tags)
     if wc then
-        tables.water:insert({ class = wc, name = tags.name, area = geom:transform(3857):area(), geom = geom })
+        tables.water:insert({ fid = fid, class = wc, name = tags.name, area = geom:transform(3857):area(), geom = geom })
         return
     end
     local lc = landcover_class(tags)
     if lc then
-        tables.landcover:insert({ class = lc, area = geom:transform(3857):area(), geom = geom })
+        tables.landcover:insert({ fid = fid, class = lc, area = geom:transform(3857):area(), geom = geom })
     end
 end
 
@@ -167,7 +176,7 @@ function osm2pgsql.process_way(object)
     local tags = object.tags
 
     if object.is_closed and tags.area ~= 'no' and not tags.highway then
-        process_area(object, object:as_polygon())
+        process_area(object, object:as_polygon(), object.id * 2)
     end
 
     if tags.highway and road_rank[tags.highway] and tags.area ~= 'yes' then
@@ -190,7 +199,7 @@ end
 function osm2pgsql.process_relation(object)
     local tags = object.tags
     if tags.type == 'multipolygon' then
-        process_area(object, object:as_multipolygon())
+        process_area(object, object:as_multipolygon(), object.id * 2 + 1)
     elseif tags.type == 'boundary' and tags.boundary == 'administrative' then
         local level = to_int(tags.admin_level)
         if level == 2 or level == 4 or level == 7 then

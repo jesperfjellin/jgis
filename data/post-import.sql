@@ -3,20 +3,23 @@
 -- by scale-dependent filters and refreshes planner statistics.
 
 -- Primary keys: GeoServer needs them for stable feature IDs and for paging
--- (WFS startIndex, OGC API Features). Each OSM object is stored at most once
--- per table, so the osm2pgsql id columns are unique.
+-- (WFS startIndex, OGC API Features). Tables with a fid column (the area tables,
+-- see osm.lua) use it; the others use the osm2pgsql id column. Each OSM object is
+-- stored at most once per table, so these columns are unique.
 DO $$
 DECLARE
     t record;
 BEGIN
     FOR t IN
-        SELECT c.table_name, c.column_name
+        SELECT c.table_name,
+               (array_agg(c.column_name ORDER BY c.column_name = 'fid' DESC))[1] AS column_name
         FROM information_schema.columns c
         WHERE c.table_schema = 'osm'
-          AND c.column_name IN ('node_id', 'way_id', 'area_id', 'relation_id')
+          AND c.column_name IN ('fid', 'node_id', 'way_id', 'area_id', 'relation_id')
           AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints tc
                           WHERE tc.table_schema = 'osm' AND tc.table_name = c.table_name
                             AND tc.constraint_type = 'PRIMARY KEY')
+        GROUP BY c.table_name
     LOOP
         EXECUTE format('ALTER TABLE osm.%I ADD PRIMARY KEY (%I)', t.table_name, t.column_name);
     END LOOP;
