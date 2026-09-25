@@ -10,7 +10,7 @@ services:
     environment:
       K6_NO_USAGE_REPORT: "true"
       K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
-      K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM: "true"
+      K6_FEATURES: native-histograms
       K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
       GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?set in environments/.env}
       # Scenario settings, passed through from `make loadtest VAR=value`.
