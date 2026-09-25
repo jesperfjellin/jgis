@@ -1,0 +1,5 @@
+# Allowlist: only the files the loader image copies. Keeps data/cache out of the build context.
+*
+!osm.lua
+!load-osm.sh
+!post-import.sql

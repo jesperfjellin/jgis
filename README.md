@@ -1,0 +1,167 @@
+# JGIS
+
+A local GIS stack for testing how well PostGIS and GeoServer perform together.
+PostGIS holds the data, GeoServer publishes it through standard OGC services,
+and everything is configured from this repository. Nothing has to be set up by
+hand in the GeoServer UI.
+
+It loads the OpenStreetMap extract for Norway (about 10 million features), so
+there is enough data for performance problems to show up.
+
+This is a development and benchmarking setup for a single machine. It has no
+authentication, TLS or hardening, and is not meant to be exposed to a network.
+
+## Status
+
+| Part                                             | State       |
+|--------------------------------------------------|-------------|
+| PostGIS, OSM data loader, GeoServer, Terraform   | Done        |
+| Metrics and logs (Prometheus, Grafana, Loki)     | Not started |
+| Load tests (k6) and baseline measurements        | Not started |
+| Browser client for visual checks (GeoLibre)      | Not started |
+
+## Requirements
+
+- Linux, macOS or Windows with WSL2
+- Docker with Docker Compose v2
+- GNU Make and OpenSSL
+- About 12 GB of free disk space (database plus the downloaded extract)
+- About 4 GB of RAM available to Docker
+
+## Setup
+
+```bash
+git clone <repository-url> jgis
+cd jgis
+make up
+```
+
+`make up` does the following:
+
+1. Creates `environments/.env` from `environments/.env.example`, with random
+   passwords, if the file does not exist.
+2. Builds the images and starts PostGIS and GeoServer.
+3. If the database has no OSM data, downloads the Norway extract (1.4 GB,
+   cached in `data/cache/`) and imports it. This takes about 10 minutes on a
+   recent machine.
+4. Applies the GeoServer configuration with Terraform.
+
+Later runs skip the download and the import. Running `make up` again is safe.
+
+When it has finished:
+
+| Service   | Address                              | Login                                  |
+|-----------|--------------------------------------|----------------------------------------|
+| GeoServer | http://127.0.0.1:8085/geoserver/web/ | `admin` / `GEOSERVER_ADMIN_PASSWORD`   |
+| PostGIS   | `127.0.0.1:5440`, database `gis`     | `postgres` / `POSTGRES_PASSWORD`       |
+|           |                                      | `geoserver` / `GEOSERVER_DB_PASSWORD` (read-only) |
+
+The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
+
+## Commands
+
+| Command          | Description                                                         |
+|------------------|---------------------------------------------------------------------|
+| `make up`        | Start the stack, import data if missing, apply the GeoServer config |
+| `make down`      | Stop the stack. Data is kept.                                       |
+| `make load-data` | Import the OSM data again. Replaces the tables in the `osm` schema. |
+| `make bootstrap` | Apply the GeoServer config again                                    |
+| `make psql`      | Open psql as `postgres`                                             |
+| `make logs`      | Follow the logs. `SERVICE=geoserver` limits it to one service.      |
+| `make reset`     | Stop the stack and delete all volumes (database and GeoServer config) |
+
+To run Docker Compose directly, pass the env file:
+`docker compose --env-file environments/.env ps`.
+
+## Configuration
+
+Settings are in `environments/.env`. See `environments/.env.example` for all
+options.
+
+| Variable                   | Default                                                   |
+|----------------------------|-----------------------------------------------------------|
+| `POSTGIS_PORT`             | `5440`                                                    |
+| `GEOSERVER_PORT`           | `8085`                                                    |
+| `GEOSERVER_VERSION`        | `3.0.1`                                                   |
+| `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
+| `PG_SHARED_BUFFERS`        | `1GB`                                                     |
+| `PG_EFFECTIVE_CACHE_SIZE`  | `3GB`                                                     |
+| `OSM_EXTRACT_URL`          | `https://download.geofabrik.de/europe/norway-latest.osm.pbf` |
+| `OSM2PGSQL_CACHE_MB`       | `1500`                                                    |
+| `OSM2PGSQL_PROCESSES`      | `4`                                                       |
+
+To use a different area, set `OSM_EXTRACT_URL` to another
+[Geofabrik](https://download.geofabrik.de/) extract and run `make load-data`.
+Downloaded extracts are kept in `data/cache/`. To get a newer copy of the same
+extract, delete the file there first.
+
+## Repository layout
+
+```
+docker-compose.yml   Services: postgis, geoserver. One-off jobs: loader, bootstrap.
+environments/        .env.example (committed) and .env (local, ignored by git)
+db/init/             Runs once on a new database: extensions, "osm" schema, read-only role
+data/                Loader image: osm2pgsql style (osm.lua) and post-import SQL
+geoserver/           GeoServer image with extensions installed at build time
+terraform/           GeoServer config: workspace, datastore, layers, styles, tile cache
+```
+
+## Data
+
+osm2pgsql imports the extract into these tables in the `osm` schema:
+
+| Table        | Geometry     | Approx. rows (Norway) |
+|--------------|--------------|-----------------------|
+| `buildings`  | MultiPolygon | 4.2 M                 |
+| `roads`      | LineString   | 1.9 M                 |
+| `landcover`  | MultiPolygon | 1.5 M                 |
+| `water`      | MultiPolygon | 1.1 M                 |
+| `waterways`  | LineString   | 0.8 M                 |
+| `pois`       | Point        | 220 k                 |
+| `places`     | Point        | 22 k                  |
+| `railways`   | LineString   | 15 k                  |
+| `boundaries` | MultiPolygon | 400                   |
+
+Geometries are stored in EPSG:3857 (Web Mercator), the projection web clients
+request, so GeoServer does not reproject. Each table has a spatial index, a
+primary key and is sorted by geometry.
+
+## GeoServer
+
+Terraform in `terraform/` owns the GeoServer configuration: the `osm` workspace
+and datastore, one layer per table, an SLD style per layer, and the tile cache
+settings. Changes made in the GeoServer UI are not tracked and are overwritten
+by `make bootstrap`.
+
+The image includes the `vectortiles` and `ogcapi-features` extensions.
+
+Endpoints, relative to `http://127.0.0.1:8085/geoserver`:
+
+| Service          | Path                                                                  |
+|------------------|-----------------------------------------------------------------------|
+| WMS, WFS         | `/osm/ows?service=WMS&request=GetCapabilities` (or `service=WFS`)     |
+| WMTS             | `/gwc/service/wmts?request=GetCapabilities`                           |
+| TMS, PNG         | `/gwc/service/tms/1.0.0/osm:roads@EPSG:900913@png/{z}/{x}/{-y}.png`   |
+| TMS, vector tile | `/gwc/service/tms/1.0.0/osm:roads@EPSG:900913@pbf/{z}/{x}/{-y}.pbf`   |
+| OGC API Features | `/ogc/features/v1/collections/osm:roads/items`                        |
+
+TMS counts tile rows from the bottom, which is `{-y}` in MapLibre and
+OpenLayers URL templates. The file extension is required.
+
+Tiles are cached by GeoWebCache in EPSG:900913 and sent with
+`Cache-Control: max-age=3600`.
+
+### Adding a layer
+
+1. Add a table in `data/osm.lua` and run `make load-data`.
+2. Add the table to `local.layers` in `terraform/layers.tf`.
+3. Add a style with the same name in `terraform/styles/`.
+4. Run `make bootstrap`.
+
+## License
+
+The code in this repository is licensed under the [MIT License](LICENSE).
+
+Map data © OpenStreetMap contributors, available under the
+[Open Database License](https://www.openstreetmap.org/copyright). The data is
+downloaded at setup time and is not part of this repository.

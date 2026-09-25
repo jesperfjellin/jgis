@@ -1,0 +1,112 @@
+name: jgis
+
+x-postgis-env: &postgis-env
+  PGHOST: postgis
+  PGDATABASE: gis
+  PGUSER: postgres
+  PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+
+services:
+  postgis:
+    image: postgis/postgis:18-3.6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGIS_PORT:-5440}:5432"
+    environment:
+      POSTGRES_DB: gis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      GEOSERVER_DB_PASSWORD: ${GEOSERVER_DB_PASSWORD:?set in .env}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,auto_explain
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - auto_explain.log_min_duration=500ms
+      - -c
+      - track_io_timing=on
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - jit=off
+    shm_size: 1g
+    volumes:
+      - postgis_data:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gis"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot OSM import: `make load-data`.
+  loader:
+    build: ./data
+    profiles: [tools]
+    environment:
+      <<: *postgis-env
+      OSM_EXTRACT_URL: ${OSM_EXTRACT_URL:-https://download.geofabrik.de/europe/norway-latest.osm.pbf}
+      OSM2PGSQL_CACHE_MB: ${OSM2PGSQL_CACHE_MB:-1500}
+      OSM2PGSQL_PROCESSES: ${OSM2PGSQL_PROCESSES:-4}
+    volumes:
+      - ./data/cache:/cache
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  geoserver:
+    build:
+      context: ./geoserver
+      args:
+        GEOSERVER_VERSION: ${GEOSERVER_VERSION:-3.0.1}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GEOSERVER_PORT:-8085}:8080"
+    environment:
+      SKIP_DEMO_DATA: "true"
+      RUN_UNPRIVILEGED: "true"
+      ROOT_WEBAPP_REDIRECT: "true"
+      CORS_ENABLED: "true"
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?set in .env}
+      EXTRA_JAVA_OPTS: ${GEOSERVER_JAVA_OPTS:--Xms1g -Xmx2g}
+      HEALTHCHECK_URL: http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png
+    volumes:
+      - geoserver_data:/opt/geoserver_data
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  # One-shot: applies the Terraform-managed GeoServer catalog. Run by `make up`.
+  bootstrap:
+    image: hashicorp/terraform:1.16.4
+    profiles: [tools]
+    entrypoint: ["/terraform/bootstrap.sh"]
+    environment:
+      TF_DATA_DIR: /state/.terraform
+      TF_VAR_geoserver_admin_password: ${GEOSERVER_ADMIN_PASSWORD:?set in .env}
+      TF_VAR_db_password: ${GEOSERVER_DB_PASSWORD:?set in .env}
+    volumes:
+      - ./terraform:/terraform
+      - terraform_state:/state
+    depends_on:
+      geoserver:
+        condition: service_healthy
+
+volumes:
+  postgis_data:
+  geoserver_data:
+  terraform_state:
