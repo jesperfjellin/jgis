@@ -65,6 +65,7 @@ When it has finished:
 |           |                                      | `geoserver` / `GEOSERVER_DB_PASSWORD` (read-only) |
 | Grafana   | http://127.0.0.1:8087                | none to view; `admin` / `GRAFANA_ADMIN_PASSWORD` to edit |
 | Prometheus| http://127.0.0.1:8088                | none                                   |
+| Loki      | http://127.0.0.1:8089                | none (HTTP API only)                   |
 
 The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 
@@ -77,7 +78,7 @@ The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 | `make load-data` | Import the OSM data again. Replaces the tables in the `osm` schema. |
 | `make bootstrap` | Apply the GeoServer config again                                    |
 | `make urls`      | Print the service addresses                                         |
-| `make loadtest`  | Run a k6 load test against the stack, see [loadtest/README.md](loadtest/README.md) |
+| `make loadtest`  | Run a k6 load test and write a report, see [loadtest/README.md](loadtest/README.md) |
 | `make psql`      | Open psql as `postgres`                                             |
 | `make logs`      | Follow the logs. `SERVICE=geoserver` limits it to one service.      |
 | `make reset`     | Stop the stack and delete all volumes (database and GeoServer config) |
@@ -97,6 +98,7 @@ options.
 | `GEOLIBRE_PORT`            | `8086`                                                    |
 | `GRAFANA_PORT`             | `8087`                                                    |
 | `PROMETHEUS_PORT`          | `8088`                                                    |
+| `LOKI_PORT`                | `8089`                                                    |
 | `PROMETHEUS_RETENTION`     | `15d`                                                     |
 | `GEOSERVER_VERSION`        | `3.0.1`                                                   |
 | `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
@@ -262,9 +264,13 @@ Alloy needs read access to `/var/run/docker.sock` to collect container logs.
 ## Load tests
 
 `loadtest/` contains k6 scenarios that simulate users browsing a map (OGC API
-tiles, WMS, OGC API Features, or a mix). Run them with `make loadtest`; results
-appear in the **Load test** Grafana dashboard. See
-[loadtest/README.md](loadtest/README.md).
+tiles, WMS, OGC API Features, or a mix). `make loadtest` runs one and writes a
+report to `loadtest/results/<id>/report.md`: client and server latency per
+service, layer and cache result, JVM, container and PostgreSQL metrics, top SQL
+statements and slow plans, GeoServer warnings, and optionally a JFR CPU profile
+of GeoServer. Tests can be repeated to measure noise and compared with a
+baseline (`BASE=<id>`). Results also appear in the **Load test** Grafana
+dashboard. See [loadtest/README.md](loadtest/README.md).
 
 ## License
 
