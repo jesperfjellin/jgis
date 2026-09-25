@@ -155,6 +155,9 @@ services:
     labels:
       jgis.config-hash: ${LOKI_CONFIG_HASH:-}
     command: ["-config.file=/etc/loki/config.yaml"]
+    # Exposed so logs can be queried directly (loadtest/README.md has examples).
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-8089}:3100"
     volumes:
       - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
       - loki_data:/loki

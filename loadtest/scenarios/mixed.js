@@ -9,15 +9,14 @@ export { wms } from './wms.js';
 export { features } from './features.js';
 
 const share = (fraction) => Math.max(1, Math.round(cfg.VUS * fraction));
-const scenario = (exec, vus) => ({ executor: 'constant-vus', exec, vus, duration: cfg.DURATION, gracefulStop: '30s' });
 
 export const options = baseOptions({
-  tiles: scenario('tiles', share(0.6)),
-  wms: scenario('wms', share(0.25)),
-  features: scenario('features', share(0.15)),
+  tiles: { exec: 'tiles', vus: share(0.6) },
+  wms: { exec: 'wms', vus: share(0.25) },
+  features: { exec: 'features', vus: share(0.15) },
 });
 
 export function setup() {
-  if (__ENV.COLD_CACHE === 'true') truncateTileCache(cfg.TILE_LAYERS);
+  if (cfg.COLD_CACHE) truncateTileCache(cfg.TILE_LAYERS);
   return { layers: tileLayerInfo(cfg.TILE_LAYERS) };
 }

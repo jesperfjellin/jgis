@@ -16,6 +16,7 @@ services:
       # Scenario settings, passed through from `make loadtest VAR=value`.
       VUS:
       DURATION:
+      WARMUP:
       SEED:
       COLD_CACHE:
       TILE_FORMAT:
@@ -35,5 +36,22 @@ services:
     depends_on:
       geoserver:
         condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  # Builds reports from Prometheus, Loki and the files a run leaves in
+  # loadtest/results/. Run by loadtest/run.sh.
+  report:
+    image: python:3.13.15-slim
+    profiles: [loadtest]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /loadtest
+    entrypoint: ["python", "report/report.py"]
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+    volumes:
+      - ./loadtest:/loadtest
+    depends_on:
       prometheus:
         condition: service_healthy
