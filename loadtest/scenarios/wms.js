@@ -2,10 +2,10 @@
 // all WMS_LAYERS combined. Every request is rendered by GeoServer from PostGIS.
 
 import * as cfg from '../lib/config.js';
-import { options as baseOptions, constantVus } from '../lib/options.js';
+import { options as baseOptions } from '../lib/options.js';
 import { mapSession, fetchAll, wmsTileRequest } from '../lib/geoserver.js';
 
-export const options = baseOptions({ wms: constantVus('wms') });
+export const options = baseOptions({ wms: { exec: 'wms', vus: cfg.VUS } });
 
 export function wms() {
   mapSession((view, seen) => {

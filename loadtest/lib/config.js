@@ -1,51 +1,40 @@
-// Settings shared by all scenarios. Everything can be overridden with
-// environment variables (see loadtest/README.md).
+// Settings shared by all scenarios. Defaults are in defaults.json (also read by
+// the report); every setting can be overridden with an environment variable of
+// the same name (see loadtest/README.md). AREAS is a list of Norwegian towns,
+// [lon, lat, spread in degrees], for the OSM Norway data.
 
-const env = (name, fallback) => (__ENV[name] !== undefined && __ENV[name] !== '' ? __ENV[name] : fallback);
+const DEFAULTS = JSON.parse(open('./defaults.json'));
+
+const env = (name) => (__ENV[name] !== undefined && __ENV[name] !== '' ? __ENV[name] : DEFAULTS[name]);
 const list = (value) => value.split(',').map((s) => s.trim()).filter(Boolean);
 
-export const BASE_URL = env('BASE_URL', 'http://geoserver:8080/geoserver');
-export const WORKSPACE = env('WORKSPACE', 'osm');
-export const SEED = Number(env('SEED', '1'));
-export const VUS = Number(env('VUS', '10'));
-export const DURATION = env('DURATION', '2m');
+export const BASE_URL = env('BASE_URL');
+export const WORKSPACE = env('WORKSPACE');
+export const SEED = Number(env('SEED'));
+export const VUS = Number(env('VUS'));
+export const DURATION = env('DURATION');
+// Optional warm-up before the measured part of the run, e.g. "30s". Warm-up
+// requests run in separate scenarios (suffix "_warmup") that the report ignores.
+export const WARMUP = env('WARMUP');
 // Seconds a simulated user waits between two map views.
-export const THINK_MIN = Number(env('THINK_MIN', '1'));
-export const THINK_MAX = Number(env('THINK_MAX', '3'));
+export const THINK_MIN = Number(env('THINK_MIN'));
+export const THINK_MAX = Number(env('THINK_MAX'));
 
 // Layers requested as tiles, bottom to top, like a map's layer list.
-export const TILE_LAYERS = list(env('TILE_LAYERS', 'landcover,water,waterways,roads,railways,buildings'));
+export const TILE_LAYERS = list(env('TILE_LAYERS'));
 // Tile format: "vector" (OGC API vector tiles) or "map" (OGC API map tiles, PNG).
-export const TILE_FORMAT = env('TILE_FORMAT', 'vector');
-export const WMS_LAYERS = list(env('WMS_LAYERS', 'landcover,water,roads,buildings,places'));
-export const FEATURE_LAYERS = list(env('FEATURE_LAYERS', 'places,pois,railways'));
+export const TILE_FORMAT = env('TILE_FORMAT');
+export const WMS_LAYERS = list(env('WMS_LAYERS'));
+export const FEATURE_LAYERS = list(env('FEATURE_LAYERS'));
 
 // Viewport in 256 px tiles: 6 x 4 is roughly a 1536 x 1024 browser map.
-export const VIEW_COLS = Number(env('VIEW_COLS', '6'));
-export const VIEW_ROWS = Number(env('VIEW_ROWS', '4'));
+export const VIEW_COLS = Number(env('VIEW_COLS'));
+export const VIEW_ROWS = Number(env('VIEW_ROWS'));
 
-// Zoom levels a user looks at, with relative weights.
-export const ZOOMS = list(env('ZOOMS', '8:1,10:2,12:3,13:3,14:4,15:3,16:2')).map((s) => s.split(':').map(Number));
+// Zoom levels a user looks at, as zoom:weight.
+export const ZOOMS = list(env('ZOOMS')).map((s) => s.split(':').map(Number));
+export const AREAS = JSON.parse(env('AREAS'));
+export const COLD_CACHE = env('COLD_CACHE') === 'true';
 
-// Where users look: [lon, lat, spread in degrees]. Defaults are Norwegian towns
-// of different sizes, for the OSM Norway data.
-export const AREAS = JSON.parse(
-  env(
-    'AREAS',
-    JSON.stringify([
-      [10.75, 59.91, 0.25], // Oslo
-      [5.33, 60.39, 0.2], // Bergen
-      [10.4, 63.43, 0.15], // Trondheim
-      [5.73, 58.97, 0.15], // Stavanger
-      [8.0, 58.15, 0.1], // Kristiansand
-      [18.96, 69.65, 0.1], // Tromsø
-      [10.2, 59.74, 0.1], // Drammen
-      [6.15, 62.47, 0.1], // Ålesund
-      [10.47, 61.12, 0.1], // Lillehammer
-      [14.4, 67.28, 0.1], // Bodø
-    ]),
-  ),
-);
-
-export const ADMIN_USER = env('GEOSERVER_ADMIN_USER', 'admin');
-export const ADMIN_PASSWORD = env('GEOSERVER_ADMIN_PASSWORD', '');
+export const ADMIN_USER = __ENV.GEOSERVER_ADMIN_USER || 'admin';
+export const ADMIN_PASSWORD = __ENV.GEOSERVER_ADMIN_PASSWORD || '';
