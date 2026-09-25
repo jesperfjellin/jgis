@@ -92,7 +92,10 @@ services:
 
   # Browser client for visual checks. Open the URL printed by `make up`.
   geolibre:
-    image: ghcr.io/opengeos/geolibre:v3.0.0
+    # Unreleased main-branch build: the deployment service library
+    # (GEOLIBRE_SERVICES_FILE) is newer than the v3.0.0 release. Move to the
+    # next release tag once it includes it.
+    image: ghcr.io/opengeos/geolibre:sha-e9df9e2
     restart: unless-stopped
     entrypoint: ["/opt/jgis/entrypoint.sh"]
     ports:
@@ -103,6 +106,10 @@ services:
       GEOLIBRE_SHARE_URL: "off"
       GEOLIBRE_GEOLENS_URL: "off"
       GEOLIBRE_DISABLE_SIDECAR: "1"
+      # Rendered from geolibre/services.json.template by the entrypoint.
+      GEOLIBRE_SERVICES_FILE: /tmp/jgis/services.json
+      # Hide GeoLibre's built-in sample services; only the JGIS ones are listed.
+      GEOLIBRE_BUILTIN_SERVICES: "off"
     volumes:
       - ./geolibre:/opt/jgis:ro
 

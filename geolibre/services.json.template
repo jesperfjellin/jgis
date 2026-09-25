@@ -1,0 +1,271 @@
+{
+  "services": [
+    {
+      "id": "jgis-wms-landcover",
+      "name": "osm:landcover (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:landcover",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-water",
+      "name": "osm:water (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:water",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-waterways",
+      "name": "osm:waterways (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:waterways",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-roads",
+      "name": "osm:roads (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:roads",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-railways",
+      "name": "osm:railways (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:railways",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-buildings",
+      "name": "osm:buildings (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:buildings",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-boundaries",
+      "name": "osm:boundaries (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:boundaries",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-places",
+      "name": "osm:places (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:places",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-wms-pois",
+      "name": "osm:pois (WMS)",
+      "category": "JGIS GeoServer",
+      "kind": "wms",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:pois",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "tileSize": "256",
+        "version": "1.1.1"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-landcover",
+      "name": "osm:landcover (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:landcover/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-water",
+      "name": "osm:water (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:water/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-waterways",
+      "name": "osm:waterways (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:waterways/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-roads",
+      "name": "osm:roads (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:roads/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-railways",
+      "name": "osm:railways (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:railways/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-buildings",
+      "name": "osm:buildings (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:buildings/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-boundaries",
+      "name": "osm:boundaries (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:boundaries/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-places",
+      "name": "osm:places (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:places/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-map-tiles-pois",
+      "name": "osm:pois (OGC API map tiles)",
+      "category": "JGIS GeoServer",
+      "kind": "xyz",
+      "fields": {
+        "url": "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:pois/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png",
+        "tileSize": "256"
+      }
+    },
+    {
+      "id": "jgis-wfs-places",
+      "name": "osm:places (WFS)",
+      "category": "JGIS GeoServer",
+      "kind": "wfs",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wfs",
+        "version": "2.0.0",
+        "typeName": "osm:places",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "maxFeatures": "25000"
+      }
+    },
+    {
+      "id": "jgis-wfs-railways",
+      "name": "osm:railways (WFS)",
+      "category": "JGIS GeoServer",
+      "kind": "wfs",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wfs",
+        "version": "2.0.0",
+        "typeName": "osm:railways",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "maxFeatures": "25000"
+      }
+    },
+    {
+      "id": "jgis-wfs-boundaries",
+      "name": "osm:boundaries (WFS)",
+      "category": "JGIS GeoServer",
+      "kind": "wfs",
+      "fields": {
+        "endpoint": "${GEOSERVER_URL}/osm/wfs",
+        "version": "2.0.0",
+        "typeName": "osm:boundaries",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326",
+        "maxFeatures": "25000"
+      }
+    }
+  ]
+}

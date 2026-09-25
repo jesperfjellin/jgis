@@ -138,23 +138,26 @@ and datastore, one layer per table, an SLD style per layer, and the tile cache
 settings. Changes made in the GeoServer UI are not tracked and are overwritten
 by `make bootstrap`.
 
-The image includes the `vectortiles` and `ogcapi-features` extensions.
+The image includes the `vectortiles` and `ogcapi-features` extensions, and the
+`ogcapi-tiles` community module (installed from the versioned jar in the OSGeo
+Maven repository, as community modules have no release downloads).
 
 Endpoints, relative to `http://127.0.0.1:8085/geoserver`:
 
-| Service          | Path                                                                  |
-|------------------|-----------------------------------------------------------------------|
-| WMS, WFS         | `/osm/ows?service=WMS&request=GetCapabilities` (or `service=WFS`)     |
-| WMTS             | `/gwc/service/wmts?request=GetCapabilities`                           |
-| TMS, PNG         | `/gwc/service/tms/1.0.0/osm:roads@EPSG:900913@png/{z}/{x}/{-y}.png`   |
-| TMS, vector tile | `/gwc/service/tms/1.0.0/osm:roads@EPSG:900913@pbf/{z}/{x}/{-y}.pbf`   |
-| OGC API Features | `/ogc/features/v1/collections/osm:roads/items`                        |
+| Service                 | Path                                                                          |
+|-------------------------|-------------------------------------------------------------------------------|
+| OGC API Features        | `/ogc/features/v1/collections/osm:roads/items`                                |
+| OGC API Tiles, vector   | `/ogc/tiles/v1/collections/osm:roads/tiles/WebMercatorQuad/{z}/{y}/{x}?f=application/vnd.mapbox-vector-tile` |
+| OGC API Tiles, map (PNG)| `/ogc/tiles/v1/collections/osm:roads/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png` |
+| OGC API Tiles, TileJSON | `/ogc/tiles/v1/collections/osm:roads/tiles/WebMercatorQuad/metadata?f=application/json` |
+| WMS, WFS                | `/osm/ows?service=WMS&request=GetCapabilities` (or `service=WFS`)             |
+| WMTS                    | `/gwc/service/wmts?request=GetCapabilities`                                   |
+| TMS                     | `/gwc/service/tms/1.0.0/osm:roads@WebMercatorQuad@png/{z}/{x}/{-y}.png`       |
 
-TMS counts tile rows from the bottom, which is `{-y}` in MapLibre and
-OpenLayers URL templates. The file extension is required.
-
-Tiles are cached by GeoWebCache in EPSG:900913 and sent with
-`Cache-Control: max-age=3600`.
+All tile endpoints are served from the same GeoWebCache cache, in the
+`WebMercatorQuad` tile matrix set, with `Cache-Control: max-age=3600`. TMS counts
+tile rows from the bottom (`{-y}` in MapLibre and OpenLayers URL templates) and
+needs the file extension.
 
 ### Adding a layer
 
@@ -174,16 +177,38 @@ The URL from `make urls` opens `geolibre/osm.geolibre.json.template`, with the
 GeoServer address filled in when the container starts. The project loads the
 same data through different GeoServer paths, so they can be compared:
 
-| Delivery                | Endpoint                         | Layers                                         |
-|-------------------------|----------------------------------|------------------------------------------------|
-| WMS, rendered per tile  | `/osm/wms` (not cached)          | land cover, water, waterways, boundaries, railways, POIs, places |
-| Vector tiles            | GeoWebCache WMTS, MVT            | roads, buildings                               |
-| Cached PNG tiles        | GeoWebCache WMTS, PNG            | roads, buildings (hidden by default)           |
+| Delivery                 | Endpoint                           | Layers                                         |
+|--------------------------|------------------------------------|------------------------------------------------|
+| WMS, rendered per tile   | `/osm/wms` (not cached)            | land cover, water, waterways, boundaries, railways, POIs, places |
+| OGC API vector tiles     | `/ogc/tiles/...` (cached)          | roads, buildings                               |
+| OGC API map tiles (PNG)  | `/ogc/tiles/.../map/...` (cached)  | roads, buildings (hidden by default)           |
 
-Buildings are drawn from zoom 14, matching the scale limit in their GeoServer
-style. Changes made in GeoLibre are not written back to the template. To change
-the default project, edit the template and run
+Buildings are drawn from zoom 14 and roads from zoom 7, matching the scale
+limits in their GeoServer styles. Changes made in GeoLibre are not written back
+to the template. To change the default project, edit the template and run
 `docker compose --env-file environments/.env restart geolibre`.
+
+### Adding layers in GeoLibre
+
+The Browser panel (left edge) lists every GeoServer layer under **Services**,
+from `geolibre/services.json.template`. Click an entry to add it:
+
+- **WMS**: all layers, rendered per request.
+- **XYZ**: all layers as OGC API map tiles (cached PNG).
+- **WFS**: `places`, `railways` and `boundaries` only, limited to 25,000
+  features. WFS loads the features into the browser, which does not work for
+  the larger layers.
+
+GeoLibre's service catalog has no entry type for vector tiles. To add a layer as
+OGC API vector tiles, use **Add Data → OGC Vector Tiles** and enter the TileJSON
+URL, for example:
+
+```
+http://127.0.0.1:8085/geoserver/ogc/tiles/v1/collections/osm:roads/tiles/WebMercatorQuad/metadata?f=application/json
+```
+
+GeoLibre runs from an unreleased main-branch image (`sha-e9df9e2`), because the
+service catalog is not in a release yet (latest is `v3.0.0`).
 
 ## License
 
