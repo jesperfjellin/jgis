@@ -1,0 +1,165 @@
+// Collects logs for Loki and turns GeoServer's access log into request metrics
+// for Prometheus.
+
+// ---------------------------------------------------------------------------
+// GeoServer access log -> request duration histogram + Loki
+// ---------------------------------------------------------------------------
+// One JSON object per request, written by Tomcat's JsonAccessLogValve (see
+// geoserver/Dockerfile). elapsedTime is in microseconds.
+
+local.file_match "geoserver_access" {
+  path_targets = [{"__path__" = "/logs/geoserver/access.*.json"}]
+}
+
+loki.source.file "geoserver_access" {
+  targets       = local.file_match.geoserver_access.targets
+  forward_to    = [loki.process.geoserver_access.receiver]
+  tail_from_end = true
+}
+
+loki.process "geoserver_access" {
+  stage.json {
+    expressions = {
+      method      = "method",
+      path        = "path",
+      query       = "query",
+      status      = "statusCode",
+      bytes       = "size",
+      duration_us = "elapsedTime",
+      cache       = "responseHeaders.\"geowebcache-cache-result\"",
+    }
+  }
+
+  // Service type, from the path first and the OGC service parameter second.
+  stage.template {
+    source   = "service"
+    template = `{{ if regexMatch "/ogc/tiles/.*/map/tiles/" .path }}ogcapi-maptiles{{ else if regexMatch "/ogc/tiles/" .path }}ogcapi-tiles{{ else if regexMatch "/ogc/features/" .path }}ogcapi-features{{ else if regexMatch "/gwc/service/wmts" .path }}wmts{{ else if regexMatch "/gwc/service/tms" .path }}tms{{ else if regexMatch "/rest/" .path }}rest{{ else if regexMatch "(?i)[?&]service=wms" .query }}wms{{ else if regexMatch "(?i)[?&]service=wfs" .query }}wfs{{ else if regexMatch "/web/" .path }}web{{ else }}other{{ end }}`
+  }
+
+  // GeoWebCache sets the header only on tile requests; everything else is "none".
+  stage.template {
+    source   = "cache"
+    template = `{{ if or (eq .cache "") (eq .cache "-") }}none{{ else }}{{ ToLower .cache }}{{ end }}`
+  }
+
+  stage.template {
+    source   = "status_class"
+    template = `{{ printf "%.1sxx" .status }}`
+  }
+
+  stage.template {
+    source   = "duration_seconds"
+    template = `{{ divf (float64 .duration_us) 1000000 }}`
+  }
+
+  // Layer name, from OGC API paths or the WMS/WMTS/WFS layer parameter.
+  stage.regex {
+    source     = "path"
+    expression = "/collections/(?P<layer>[^/?]+)"
+  }
+  stage.regex {
+    source     = "query"
+    expression = "(?i)[?&](?:layers?|typenames?)=(?P<layer>[^&]+)"
+  }
+
+  // Low-cardinality values become labels (and metric labels below).
+  stage.labels {
+    values = {
+      service      = "",
+      cache        = "",
+      status_class = "",
+    }
+  }
+
+  // High-cardinality values stay queryable in Loki without becoming labels.
+  stage.structured_metadata {
+    values = {
+      layer = "",
+    }
+  }
+
+  stage.metrics {
+    metric.histogram {
+      name              = "request_duration_seconds"
+      description       = "GeoServer request duration from the Tomcat access log"
+      prefix            = "geoserver_"
+      source            = "duration_seconds"
+      buckets           = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30]
+      max_idle_duration = "1h"
+    }
+    metric.counter {
+      name              = "response_bytes_total"
+      description       = "Bytes sent by GeoServer, from the Tomcat access log"
+      prefix            = "geoserver_"
+      source            = "bytes"
+      action            = "add"
+      max_idle_duration = "1h"
+    }
+  }
+
+  // The file name changes daily; it is not useful as a stream label.
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  stage.static_labels {
+    values = {
+      job = "geoserver-access",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Container logs (GeoServer application log, PostgreSQL incl. auto_explain, ...)
+// ---------------------------------------------------------------------------
+
+discovery.docker "compose" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=" + sys.env("COMPOSE_PROJECT")]
+  }
+}
+
+discovery.relabel "compose" {
+  targets = discovery.docker.compose.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "compose" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.compose.output
+  relabel_rules = discovery.relabel.compose.rules
+  forward_to    = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  // PostgreSQL log entries (including multi-line auto_explain plans) start with
+  // a timestamp; continuation lines are joined to the entry before them.
+  stage.match {
+    selector = "{service=\"postgis\"}"
+    stage.multiline {
+      firstline     = "^\\d{4}-\\d{2}-\\d{2} "
+      max_wait_time = "3s"
+    }
+  }
+
+  stage.static_labels {
+    values = {
+      job = "containers",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

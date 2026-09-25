@@ -1,0 +1,929 @@
+{
+  "uid": "jgis-geoserver-requests",
+  "title": "GeoServer requests",
+  "description": "Request rate, latency percentiles and tile cache efficiency, from GeoServer's access log.",
+  "tags": [
+    "jgis"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(geoserver_request_duration_seconds_count, service)",
+          "refId": "service"
+        },
+        "definition": "label_values(geoserver_request_duration_seconds_count, service)",
+        "regex": "/^(?!web$|rest$|other$).*/",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "GeoServer requests",
+      "type": "link",
+      "url": "/d/jgis-geoserver-requests",
+      "keepTime": true
+    },
+    {
+      "title": "GeoServer JVM",
+      "type": "link",
+      "url": "/d/jgis-geoserver-jvm",
+      "keepTime": true
+    },
+    {
+      "title": "PostGIS",
+      "type": "link",
+      "url": "/d/jgis-postgis",
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Requests / s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(geoserver_request_duration_seconds_count{service=~\"$service\"}[$__rate_interval]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "P95 latency",
+      "description": "Over all selected services, including cache hits.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(geoserver_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "id": 2,
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tile cache hit ratio",
+      "description": "Share of cacheable tile requests served from GeoWebCache.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(geoserver_request_duration_seconds_count{service=~\"$service\",cache=\"hit\"}[$__rate_interval])) / sum(rate(geoserver_request_duration_seconds_count{service=~\"$service\",cache=~\"hit|miss\"}[$__rate_interval]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "id": 3,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "5xx / s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(geoserver_request_duration_seconds_count{service=~\"$service\",status_class=\"5xx\"}[$__rate_interval])) or vector(0)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Latency",
+      "collapsed": false,
+      "panels": [],
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "P50 by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, service) (rate(geoserver_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(geoserver_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 7,
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "P99 by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, service) (rate(geoserver_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 8,
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tile P95: cache hit vs miss",
+      "description": "A miss renders the tile from PostGIS; a hit is served from the GeoWebCache store.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service, cache) (rate(geoserver_request_duration_seconds_bucket{service=~\"$service\",cache=~\"hit|miss\"}[$__rate_interval])))",
+          "legendFormat": "{{service}} {{cache}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Mean latency by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(geoserver_request_duration_seconds_sum{service=~\"$service\"}[$__rate_interval])) / sum by (service) (rate(geoserver_request_duration_seconds_count{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 10,
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "Traffic",
+      "collapsed": false,
+      "panels": [],
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests / s by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(geoserver_request_duration_seconds_count{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Responses / s by status",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status_class) (rate(geoserver_request_duration_seconds_count{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{status_class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 13,
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tile cache hit ratio by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(geoserver_request_duration_seconds_count{service=~\"$service\",cache=\"hit\"}[$__rate_interval])) / sum by (service) (rate(geoserver_request_duration_seconds_count{service=~\"$service\",cache=~\"hit|miss\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Bytes sent / s by service",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(geoserver_response_bytes_total{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 15,
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "Per layer (from logs)",
+      "collapsed": false,
+      "panels": [],
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "interval": "1m",
+      "type": "timeseries",
+      "title": "P95 by layer",
+      "description": "Computed from the raw access log in Loki. Layer is taken from the OGC API path or the LAYERS/LAYER/TYPENAMES parameter.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "quantile_over_time(0.95, {job=\"geoserver-access\", service=~\"$service\"} | json | layer != \"\" | unwrap elapsedTime [$__auto]) by (layer) / 1000000",
+          "legendFormat": "{{layer}}",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 17,
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "interval": "1m",
+      "type": "timeseries",
+      "title": "Requests / s by layer",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (layer) (rate({job=\"geoserver-access\", service=~\"$service\"} | json | layer != \"\" [$__auto]))",
+          "legendFormat": "{{layer}}",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A"
+        }
+      ],
+      "id": 18,
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Slowest requests (over 1 s)",
+      "description": "Access log entries slower than one second. elapsedTime is in microseconds.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "expr": "{job=\"geoserver-access\", service=~\"$service\"} | json | elapsedTime > 1000000",
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ],
+      "id": 19,
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 24,
+        "h": 10
+      }
+    }
+  ]
+}
