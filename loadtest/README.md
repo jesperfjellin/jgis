@@ -93,8 +93,12 @@ Pass them to `make loadtest` as `NAME=value`. Scenario defaults are in
   - **Client (k6):** requests, failures and P50/P95/P99 per service and layer.
   - **GeoServer:** from the access log, per service, layer and cache result
     (hit, miss, none): requests, errors, P50/P95/P99, max and total time.
-  - **Resources:** GeoServer JVM CPU, heap, GC and Tomcat threads, and CPU and
-    memory per container (sampled with `docker stats`).
+  - **Resources:** GeoServer JVM CPU, heap, GC and Tomcat threads; CPU and
+    memory per container against its memory limit (sampled with `docker
+    stats`); containers that restarted or were OOM-killed; and the Docker
+    host's pressure counters: the share of the run in which tasks stalled
+    waiting for memory, CPU or IO. Memory stalls or OOM kills mean the machine,
+    not the stack, limited the results, and the report says so.
   - **PostgreSQL:** rows scanned vs returned, buffer cache hit ratio, temp
     files, connections, the top statements by total time with calls, mean time
     and rows per call, and the slowest `auto_explain` plans (over 500 ms).

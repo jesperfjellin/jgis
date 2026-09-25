@@ -2,6 +2,7 @@
 # file (see `make loadtest`); paths are relative to the repository root.
 services:
   k6:
+    mem_limit: ${K6_MEM_LIMIT:-512m}
     image: grafana/k6:2.3.0
     profiles: [loadtest]
     # Writes the summary files into loadtest/results as the host user.
@@ -42,6 +43,7 @@ services:
   # Builds reports from Prometheus, Loki and the files a run leaves in
   # loadtest/results/. Run by loadtest/run.sh.
   report:
+    mem_limit: ${REPORT_MEM_LIMIT:-256m}
     image: python:3.13.15-slim
     profiles: [loadtest]
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"

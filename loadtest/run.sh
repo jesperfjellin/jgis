@@ -16,6 +16,8 @@ REPEAT="${REPEAT:-1}"
 COOLDOWN="${COOLDOWN:-15}"
 ENV_FILE="${ENV_FILE:-environments/.env}"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f loadtest/compose.yaml --profile loadtest)
+# Compose project name (`name:` in docker-compose.yml); container names start with it.
+PROJECT="${PROJECT:-jgis}"
 
 [[ -f "loadtest/scenarios/$SCENARIO.js" ]] || { echo "Unknown SCENARIO '$SCENARIO', see loadtest/scenarios/" >&2; exit 1; }
 [[ "$REPEAT" =~ ^[1-9][0-9]*$ ]] || { echo "REPEAT must be a positive integer" >&2; exit 1; }
@@ -67,14 +69,25 @@ warmup_s="$(to_seconds "${WARMUP:-}")"
 
 geoserver_exec() { "${COMPOSE[@]}" exec -T -u tomcat geoserver "$@"; }
 
-# Samples CPU and memory of the stack's containers every few seconds.
+# Every few seconds: CPU and memory of the stack's containers, and the Docker
+# host's pressure counters (share of time tasks stalled waiting for memory,
+# CPU or IO). The counters are system-wide, so any container can read them.
 sample_resources() {
-  local out="$1"
+  local out="$1" pressure="$2"
   while true; do
     docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null \
-      | grep '^jgis-' | sed "s/^/$(date +%s)\t/" >> "$out" || true
+      | grep "^$PROJECT-" | sed "s/^/$(date +%s)\t/" >> "$out" || true
+    docker exec "$PROJECT-prometheus-1" sh -c \
+      'for r in memory cpu io; do echo "$r $(grep -o "total=[0-9]*" /proc/pressure/$r | cut -d= -f2 | paste -sd" " -)"; done' \
+      2>/dev/null | sed "s/^/$(date +%s) /" >> "$pressure" || true
     sleep 3
   done
+}
+
+# Restart count and OOM-kill flag of the stack's containers.
+container_state() {
+  docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' \
+    | xargs -r docker inspect --format '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}}' | sed 's|^/||'
 }
 
 for (( n = 1; n <= REPEAT; n++ )); do
@@ -90,7 +103,8 @@ for (( n = 1; n <= REPEAT; n++ )); do
       delay="${warmup_s}s" filename="$jfr_file" >/dev/null
   fi
 
-  sample_resources "$rdir/resources.tsv" &
+  container_state > "$rdir/containers-before.txt"
+  sample_resources "$rdir/resources.tsv" "$rdir/pressure.txt" &
   sampler=$!
   start=$(date +%s)
 
@@ -103,6 +117,7 @@ for (( n = 1; n <= REPEAT; n++ )); do
 
   end=$(date +%s)
   kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null || true
+  container_state > "$rdir/containers-after.txt"
 
   {
     echo "RUN=$n"

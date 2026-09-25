@@ -269,10 +269,15 @@ def collect_warnings(end, window):
     return sorted(rows, key=lambda r: -r["count"])[:10]
 
 
-def collect_resources(path, start, end):
-    """Container CPU (% of one core) and memory from docker stats samples."""
+def parse_bytes(text):
     units = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "kB": 1000, "MB": 1000**2, "GB": 1000**3}
-    cpu, mem = defaultdict(list), defaultdict(list)
+    num, unit = re.match(r"([\d.]+)\s*(\w+)", text.strip()).groups()
+    return float(num) * units.get(unit, 1)
+
+
+def collect_resources(path, start, end):
+    """Container CPU (% of one core) and memory (used and limit) from docker stats samples."""
+    cpu, mem, limit = defaultdict(list), defaultdict(list), {}
     if not os.path.exists(path):
         return {}
     for line in open(path, encoding="utf-8"):
@@ -283,16 +288,61 @@ def collect_resources(path, start, end):
         name = "k6" if name.startswith("k6-run") else "report" if name.startswith("report-run") else name
         try:
             cpu[name].append(float(parts[2].rstrip("%")))
-            used = parts[3].split("/")[0].strip()
-            num, unit = re.match(r"([\d.]+)\s*(\w+)", used).groups()
-            mem[name].append(float(num) * units.get(unit, 1))
+            used, lim = parts[3].split("/")
+            mem[name].append(parse_bytes(used))
+            limit[name] = parse_bytes(lim)
         except (ValueError, AttributeError):
             continue
     return {
         name: {"cpu_cores_mean": round(statistics.mean(v) / 100, 2), "cpu_cores_max": round(max(v) / 100, 2),
-               "mem_max_bytes": round(max(mem[name])) if mem[name] else None}
+               "mem_max_bytes": round(max(mem[name])) if mem[name] else None, "mem_limit_bytes": round(limit.get(name) or 0) or None}
         for name, v in sorted(cpu.items()) if v
     }
+
+
+def collect_pressure(path, start, end):
+    """Share of the window in which tasks on the Docker host stalled waiting for
+    memory, CPU or IO (Linux PSI; "some" = at least one task, "full" = all
+    non-idle tasks). Counters are cumulative microseconds."""
+    samples = defaultdict(list)
+    if not os.path.exists(path):
+        return {}
+    for line in open(path, encoding="utf-8"):
+        parts = line.split()
+        if len(parts) >= 3 and start <= int(parts[0]) <= end:
+            samples[parts[1]].append((int(parts[0]), [int(x) for x in parts[2:]]))
+    out = {}
+    for resource, rows in samples.items():
+        if len(rows) < 2:
+            continue
+        (t0, first), (t1, last) = rows[0], rows[-1]
+        span = (t1 - t0) * 1e6
+        if span <= 0:
+            continue
+        out[resource] = {"some": round((last[0] - first[0]) / span, 4)}
+        if len(first) > 1 and len(last) > 1:
+            out[resource]["full"] = round((last[1] - first[1]) / span, 4)
+    return out
+
+
+def collect_containers(rdir):
+    """Containers that restarted or were OOM-killed during the run."""
+    def read(name):
+        path = os.path.join(rdir, name)
+        state = {}
+        if os.path.exists(path):
+            for line in open(path, encoding="utf-8"):
+                parts = line.split()
+                if len(parts) == 3:
+                    state[parts[0]] = (int(parts[1]), parts[2] == "true")
+        return state
+    before, after = read("containers-before.txt"), read("containers-after.txt")
+    events = []
+    for name, (restarts, oom) in after.items():
+        prev = before.get(name, (restarts, False))
+        if restarts > prev[0] or (oom and not prev[1]):
+            events.append({"container": name, "restarts": restarts - prev[0], "oom_killed": oom})
+    return events
 
 
 # JFR: components, matched on the leaf-most frame that belongs to one.
@@ -395,6 +445,24 @@ def collect_profile(rdir):
 def findings(r):
     out = []
     ctx = r["context"]
+    for e in r.get("container_events", []):
+        out.append(f"Container {e['container']} " + ("was OOM-killed" if e["oom_killed"] else f"restarted {e['restarts']} time(s)")
+                   + " during the run: results are not reliable. Raise its memory limit in environments/.env or lower the load.")
+    pr = r.get("pressure", {})
+    mem_full = (pr.get("memory") or {}).get("full") or 0
+    mem_some = (pr.get("memory") or {}).get("some") or 0
+    if mem_full > 0.01 or mem_some > 0.05:
+        out.append(f"The Docker host was short of memory: tasks stalled {pct(mem_some)} of the time (all tasks {pct(mem_full)}). "
+                   "Results are not reliable; free memory on the host or lower the stack's memory limits.")
+    cpu_some = (pr.get("cpu") or {}).get("some") or 0
+    if cpu_some > 0.5:
+        out.append(f"Tasks on the Docker host waited for CPU {pct(cpu_some)} of the time: the machine, not only GeoServer, was saturated.")
+    io_full = (pr.get("io") or {}).get("full") or 0
+    if io_full > 0.1:
+        out.append(f"All tasks on the Docker host stalled on IO {pct(io_full)} of the time: disk-bound.")
+    for name, res in r.get("resources", {}).items():
+        if res.get("mem_limit_bytes") and res.get("mem_max_bytes") and res["mem_max_bytes"] > 0.9 * res["mem_limit_bytes"]:
+            out.append(f"Container {name} used {res['mem_max_bytes'] / res['mem_limit_bytes']:.0%} of its memory limit.")
     cores = float(ctx.get("DOCKER_NCPU") or 0)
     client = r["client"]["overall"]
     if client.get("failed"):
@@ -500,8 +568,14 @@ def render_run(r):
             f"heap max {gib(j['heap_used_max_bytes'])} of {gib(j['heap_max_bytes'])}, GC {pct(j['gc_time_share'])} of wall time, "
             f"Tomcat busy threads max {fmt_num(j['tomcat_busy_threads_max'])} of {fmt_num(j['tomcat_max_threads'])}.", ""]
     if r.get("resources"):
-        out += [md_table(["container", "CPU mean (cores)", "CPU max (cores)", "memory max"],
-                         [[k, v["cpu_cores_mean"], v["cpu_cores_max"], gib(v["mem_max_bytes"])] for k, v in r["resources"].items()]), ""]
+        out += [md_table(["container", "CPU mean (cores)", "CPU max (cores)", "memory max", "memory limit"],
+                         [[k, v["cpu_cores_mean"], v["cpu_cores_max"], gib(v["mem_max_bytes"]), gib(v.get("mem_limit_bytes"))]
+                          for k, v in r["resources"].items()]), ""]
+    if r.get("pressure"):
+        p_ = r["pressure"]
+        out += ["Docker host pressure (share of the window tasks stalled): "
+                + ", ".join(f"{res} {pct(v['some'])}" + (f" (all tasks {pct(v['full'])})" if "full" in v and res != "cpu" else "")
+                            for res, v in p_.items()) + ".", ""]
     d = r["database"]
     out += ["## PostgreSQL", "",
             f"Rows scanned {fmt_num(d['rows_scanned'])}, returned {fmt_num(d['rows_returned'])} (ratio {d['scanned_per_returned']}). "
@@ -554,6 +628,8 @@ def cmd_run(rdir):
         "slow_plans": collect_slow_plans(mstart, end),
         "warnings": collect_warnings(end, window),
         "resources": collect_resources(os.path.join(rdir, "resources.tsv"), mstart, end),
+        "pressure": collect_pressure(os.path.join(rdir, "pressure.txt"), mstart, end),
+        "container_events": collect_containers(rdir),
         "profile": collect_profile(rdir),
     }
     r["client"]["overall"]["rps"] = round(r["client"]["overall"]["requests"] / window, 1)
@@ -583,6 +659,9 @@ def key_metrics(r):
     m["pg rows scanned per returned"] = (r["database"]["scanned_per_returned"], True, None)
     m["statements over 500 ms"] = (r["slow_plans"]["count"], True, None)
     m["geoserver warnings"] = (sum(w["count"] for w in r["warnings"]), True, None)
+    for res in ("memory", "cpu", "io"):
+        if res in r.get("pressure", {}):
+            m[f"host {res} pressure (some)"] = (r["pressure"][res]["some"], True, None)
     return m
 
 
