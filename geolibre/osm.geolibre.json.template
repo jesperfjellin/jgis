@@ -104,14 +104,15 @@
     },
     {
       "id": "aeaff99a-73c6-55d7-877a-b3f25d7a411e",
-      "name": "Buildings (cached PNG tiles)",
+      "name": "Buildings (OGC API map tiles)",
       "type": "xyz",
       "source": {
         "type": "raster",
         "tiles": [
-          "${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=osm:buildings&STYLE=&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png"
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:buildings/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png"
         ],
-        "tileSize": 256
+        "tileSize": 256,
+        "minzoom": 14
       },
       "visible": false,
       "opacity": 1,
@@ -120,18 +121,18 @@
     },
     {
       "id": "ac88c34e-6797-52ea-8f49-139212009b6c",
-      "name": "Buildings (vector tiles)",
+      "name": "Buildings (OGC API vector tiles)",
       "type": "vector-tiles",
       "source": {
         "type": "vector",
         "tiles": [
-          "${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=osm:buildings&STYLE=&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=application/vnd.mapbox-vector-tile"
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:buildings/tiles/WebMercatorQuad/{z}/{y}/{x}?f=application/vnd.mapbox-vector-tile"
         ],
         "sourceLayer": "buildings",
         "sourceLayers": [
           "buildings"
         ],
-        "minzoom": 0,
+        "minzoom": 14,
         "maxzoom": 18
       },
       "visible": true,
@@ -152,14 +153,15 @@
     },
     {
       "id": "5a789d16-eca6-5421-9f3a-ce1ba9dad3b0",
-      "name": "Roads (cached PNG tiles)",
+      "name": "Roads (OGC API map tiles)",
       "type": "xyz",
       "source": {
         "type": "raster",
         "tiles": [
-          "${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=osm:roads&STYLE=&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png"
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:roads/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png"
         ],
-        "tileSize": 256
+        "tileSize": 256,
+        "minzoom": 7
       },
       "visible": false,
       "opacity": 1,
@@ -168,24 +170,24 @@
     },
     {
       "id": "2c8fb4dd-284b-5838-9366-b424a6b2e9ca",
-      "name": "Roads (vector tiles)",
+      "name": "Roads (OGC API vector tiles)",
       "type": "vector-tiles",
       "source": {
         "type": "vector",
         "tiles": [
-          "${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=osm:roads&STYLE=&TILEMATRIXSET=EPSG:900913&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}&FORMAT=application/vnd.mapbox-vector-tile"
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:roads/tiles/WebMercatorQuad/{z}/{y}/{x}?f=application/vnd.mapbox-vector-tile"
         ],
         "sourceLayer": "roads",
         "sourceLayers": [
           "roads"
         ],
-        "minzoom": 0,
+        "minzoom": 7,
         "maxzoom": 18
       },
       "visible": true,
       "opacity": 1,
       "style": {
-        "minZoom": 6,
+        "minZoom": 7,
         "strokeColor": "#e0707f",
         "strokeWidth": 1.2
       },

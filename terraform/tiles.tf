@@ -17,7 +17,7 @@ resource "geoserver_gwc_gs_layer" "layer" {
   expire_duration_clients = 3600
 
   grid_subset {
-    name = "EPSG:900913"
+    name = "WebMercatorQuad"
   }
 
   lifecycle {
