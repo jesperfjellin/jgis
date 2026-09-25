@@ -10,3 +10,15 @@ RUN set -eu; for ext in ${EXTENSIONS}; do \
       unzip -o -q /tmp/ext.zip '*.jar' -d "${CATALINA_HOME}/webapps/geoserver/WEB-INF/lib/"; \
       rm /tmp/ext.zip; \
     done
+
+# Community modules have no release zips, only nightly builds. Released jars of
+# the same version are published to the OSGeo Maven repository, so fetch those
+# instead. Their dependencies must already be in the image (check the module's
+# pom when adding one); the sha1 files guard against truncated downloads.
+ARG COMMUNITY_MODULES="gs-ogcapi-tiles"
+RUN set -eu; lib="${CATALINA_HOME}/webapps/geoserver/WEB-INF/lib"; \
+    for mod in ${COMMUNITY_MODULES}; do \
+      url="https://repo.osgeo.org/repository/release/org/geoserver/community/${mod}/${GEOSERVER_VERSION}/${mod}-${GEOSERVER_VERSION}.jar"; \
+      curl -fsSL -o "${lib}/${mod}-${GEOSERVER_VERSION}.jar" "${url}"; \
+      echo "$(curl -fsSL "${url}.sha1")  ${lib}/${mod}-${GEOSERVER_VERSION}.jar" | sha1sum -c -; \
+    done

@@ -1,0 +1,270 @@
+{
+  "version": "0.1.0",
+  "name": "JGIS OSM",
+  "mapView": {
+    "center": [
+      10.75,
+      59.91
+    ],
+    "zoom": 12,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "basemapStyleUrl": "",
+  "basemapVisible": false,
+  "basemapOpacity": 1,
+  "layers": [
+    {
+      "id": "7dd23861-4d4e-5849-8be2-0e985fe1cede",
+      "name": "Land cover (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:landcover&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:landcover",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "2a09f0bd-0d6e-5aef-9fa7-3f65c02efa3e",
+      "name": "Water areas (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:water&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:water",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "62623e04-3fbe-5ed0-8ebe-b5d1224adcf1",
+      "name": "Waterways (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:waterways&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:waterways",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "b125ca41-1e1a-57fd-9207-6bd772dea887",
+      "name": "Boundaries (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:boundaries&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:boundaries",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "aeaff99a-73c6-55d7-877a-b3f25d7a411e",
+      "name": "Buildings (OGC API map tiles)",
+      "type": "xyz",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:buildings/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png"
+        ],
+        "tileSize": 256,
+        "minzoom": 14
+      },
+      "visible": false,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "ac88c34e-6797-52ea-8f49-139212009b6c",
+      "name": "Buildings (OGC API vector tiles)",
+      "type": "vector-tiles",
+      "source": {
+        "type": "vector",
+        "tiles": [
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:buildings/tiles/WebMercatorQuad/{z}/{y}/{x}?f=application/vnd.mapbox-vector-tile"
+        ],
+        "sourceLayer": "buildings",
+        "sourceLayers": [
+          "buildings"
+        ],
+        "minzoom": 14,
+        "maxzoom": 18
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {
+        "minZoom": 14,
+        "fillColor": "#d9d0c9",
+        "fillOpacity": 1,
+        "strokeColor": "#b9a99c",
+        "strokeWidth": 0.5
+      },
+      "metadata": {
+        "geometryType": "polygon",
+        "sourceLayers": [
+          "buildings"
+        ]
+      }
+    },
+    {
+      "id": "5a789d16-eca6-5421-9f3a-ce1ba9dad3b0",
+      "name": "Roads (OGC API map tiles)",
+      "type": "xyz",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:roads/map/tiles/WebMercatorQuad/{z}/{y}/{x}?f=image/png"
+        ],
+        "tileSize": 256,
+        "minzoom": 7
+      },
+      "visible": false,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "2c8fb4dd-284b-5838-9366-b424a6b2e9ca",
+      "name": "Roads (OGC API vector tiles)",
+      "type": "vector-tiles",
+      "source": {
+        "type": "vector",
+        "tiles": [
+          "${GEOSERVER_URL}/ogc/tiles/v1/collections/osm:roads/tiles/WebMercatorQuad/{z}/{y}/{x}?f=application/vnd.mapbox-vector-tile"
+        ],
+        "sourceLayer": "roads",
+        "sourceLayers": [
+          "roads"
+        ],
+        "minzoom": 7,
+        "maxzoom": 18
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {
+        "minZoom": 7,
+        "strokeColor": "#e0707f",
+        "strokeWidth": 1.2
+      },
+      "metadata": {
+        "geometryType": "line",
+        "sourceLayers": [
+          "roads"
+        ]
+      }
+    },
+    {
+      "id": "900fcdf5-893f-5ea0-a1ab-ae71b63d7e6d",
+      "name": "Railways (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:railways&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:railways",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "35056a85-ba19-5a03-8cd1-2ce8672d3b83",
+      "name": "Points of interest (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:pois&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:pois",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    },
+    {
+      "id": "af4bc575-0501-5db4-887d-40fe520811f7",
+      "name": "Places (WMS)",
+      "type": "wms",
+      "source": {
+        "type": "raster",
+        "tiles": [
+          "${GEOSERVER_URL}/osm/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=osm:places&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256"
+        ],
+        "tileSize": 256,
+        "url": "${GEOSERVER_URL}/osm/wms",
+        "layers": "osm:places",
+        "styles": "",
+        "format": "image/png",
+        "transparent": true,
+        "version": "1.1.1"
+      },
+      "visible": true,
+      "opacity": 1,
+      "style": {},
+      "metadata": {}
+    }
+  ],
+  "styles": {},
+  "metadata": {}
+}

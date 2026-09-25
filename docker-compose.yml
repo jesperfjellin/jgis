@@ -90,6 +90,29 @@ services:
       postgis:
         condition: service_healthy
 
+  # Browser client for visual checks. Open the URL printed by `make up`.
+  geolibre:
+    # Unreleased main-branch build: the deployment service library
+    # (GEOLIBRE_SERVICES_FILE) is newer than the v3.0.0 release. Move to the
+    # next release tag once it includes it.
+    image: ghcr.io/opengeos/geolibre:sha-e9df9e2
+    restart: unless-stopped
+    entrypoint: ["/opt/jgis/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:${GEOLIBRE_PORT:-8086}:80"
+    environment:
+      # Loaded by the browser, so this is the host-side address, not the service name.
+      GEOSERVER_URL: http://127.0.0.1:${GEOSERVER_PORT:-8085}/geoserver
+      GEOLIBRE_SHARE_URL: "off"
+      GEOLIBRE_GEOLENS_URL: "off"
+      GEOLIBRE_DISABLE_SIDECAR: "1"
+      # Rendered from geolibre/services.json.template by the entrypoint.
+      GEOLIBRE_SERVICES_FILE: /tmp/jgis/services.json
+      # Hide GeoLibre's built-in sample services; only the JGIS ones are listed.
+      GEOLIBRE_BUILTIN_SERVICES: "off"
+    volumes:
+      - ./geolibre:/opt/jgis:ro
+
   # One-shot: applies the Terraform-managed GeoServer catalog. Run by `make up`.
   bootstrap:
     image: hashicorp/terraform:1.16.4
