@@ -22,6 +22,15 @@ up: $(ENV_FILE) ## Start the stack, import data if missing, apply the GeoServer 
 		$(MAKE) --no-print-directory load-data; \
 	fi
 	$(MAKE) --no-print-directory bootstrap
+	@$(MAKE) --no-print-directory urls
+
+urls: ## Print the addresses of the running services
+	@set -a; . ./$(ENV_FILE); set +a; \
+	gs="http://127.0.0.1:$${GEOSERVER_PORT:-8085}/geoserver"; \
+	gl="http://127.0.0.1:$${GEOLIBRE_PORT:-8086}"; \
+	echo "GeoServer: $$gs/web/"; \
+	echo "GeoLibre:  $$gl/?url=$$gl/projects/osm.geolibre.json"; \
+	echo "PostGIS:   127.0.0.1:$${POSTGIS_PORT:-5440}, database gis"
 
 bootstrap: ## Apply the Terraform-managed GeoServer catalog
 	$(COMPOSE) run --rm bootstrap

@@ -18,7 +18,7 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 | PostGIS, OSM data loader, GeoServer, Terraform   | Done        |
 | Metrics and logs (Prometheus, Grafana, Loki)     | Not started |
 | Load tests (k6) and baseline measurements        | Not started |
-| Browser client for visual checks (GeoLibre)      | Not started |
+| Browser client for visual checks (GeoLibre)      | Done        |
 
 ## Requirements
 
@@ -40,11 +40,12 @@ make up
 
 1. Creates `environments/.env` from `environments/.env.example`, with random
    passwords, if the file does not exist.
-2. Builds the images and starts PostGIS and GeoServer.
+2. Builds the images and starts PostGIS, GeoServer and GeoLibre.
 3. If the database has no OSM data, downloads the Norway extract (1.4 GB,
    cached in `data/cache/`) and imports it. This takes about 10 minutes on a
    recent machine.
 4. Applies the GeoServer configuration with Terraform.
+5. Prints the service addresses (also available with `make urls`).
 
 Later runs skip the download and the import. Running `make up` again is safe.
 
@@ -53,6 +54,7 @@ When it has finished:
 | Service   | Address                              | Login                                  |
 |-----------|--------------------------------------|----------------------------------------|
 | GeoServer | http://127.0.0.1:8085/geoserver/web/ | `admin` / `GEOSERVER_ADMIN_PASSWORD`   |
+| GeoLibre  | http://127.0.0.1:8086/?url=http://127.0.0.1:8086/projects/osm.geolibre.json | none |
 | PostGIS   | `127.0.0.1:5440`, database `gis`     | `postgres` / `POSTGRES_PASSWORD`       |
 |           |                                      | `geoserver` / `GEOSERVER_DB_PASSWORD` (read-only) |
 
@@ -66,6 +68,7 @@ The passwords are in `environments/.env`. All ports are bound to 127.0.0.1.
 | `make down`      | Stop the stack. Data is kept.                                       |
 | `make load-data` | Import the OSM data again. Replaces the tables in the `osm` schema. |
 | `make bootstrap` | Apply the GeoServer config again                                    |
+| `make urls`      | Print the service addresses                                         |
 | `make psql`      | Open psql as `postgres`                                             |
 | `make logs`      | Follow the logs. `SERVICE=geoserver` limits it to one service.      |
 | `make reset`     | Stop the stack and delete all volumes (database and GeoServer config) |
@@ -82,6 +85,7 @@ options.
 |----------------------------|-----------------------------------------------------------|
 | `POSTGIS_PORT`             | `5440`                                                    |
 | `GEOSERVER_PORT`           | `8085`                                                    |
+| `GEOLIBRE_PORT`            | `8086`                                                    |
 | `GEOSERVER_VERSION`        | `3.0.1`                                                   |
 | `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
 | `PG_SHARED_BUFFERS`        | `1GB`                                                     |
@@ -98,11 +102,12 @@ extract, delete the file there first.
 ## Repository layout
 
 ```
-docker-compose.yml   Services: postgis, geoserver. One-off jobs: loader, bootstrap.
+docker-compose.yml   Services: postgis, geoserver, geolibre. One-off jobs: loader, bootstrap.
 environments/        .env.example (committed) and .env (local, ignored by git)
 db/init/             Runs once on a new database: extensions, "osm" schema, read-only role
 data/                Loader image: osm2pgsql style (osm.lua) and post-import SQL
 geoserver/           GeoServer image with extensions installed at build time
+geolibre/            GeoLibre project template and container entrypoint
 terraform/           GeoServer config: workspace, datastore, layers, styles, tile cache
 ```
 
@@ -157,6 +162,28 @@ Tiles are cached by GeoWebCache in EPSG:900913 and sent with
 2. Add the table to `local.layers` in `terraform/layers.tf`.
 3. Add a style with the same name in `terraform/styles/`.
 4. Run `make bootstrap`.
+
+## GeoLibre
+
+[GeoLibre](https://github.com/opengeos/GeoLibre) is included as a browser
+client for checking that the published data renders correctly. It runs from the
+upstream image with project sharing, collaboration and the Python sidecar turned
+off. It is not part of what is being measured.
+
+The URL from `make urls` opens `geolibre/osm.geolibre.json.template`, with the
+GeoServer address filled in when the container starts. The project loads the
+same data through different GeoServer paths, so they can be compared:
+
+| Delivery                | Endpoint                         | Layers                                         |
+|-------------------------|----------------------------------|------------------------------------------------|
+| WMS, rendered per tile  | `/osm/wms` (not cached)          | land cover, water, waterways, boundaries, railways, POIs, places |
+| Vector tiles            | GeoWebCache WMTS, MVT            | roads, buildings                               |
+| Cached PNG tiles        | GeoWebCache WMTS, PNG            | roads, buildings (hidden by default)           |
+
+Buildings are drawn from zoom 14, matching the scale limit in their GeoServer
+style. Changes made in GeoLibre are not written back to the template. To change
+the default project, edit the template and run
+`docker compose --env-file environments/.env restart geolibre`.
 
 ## License
 
