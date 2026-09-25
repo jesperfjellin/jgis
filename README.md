@@ -27,7 +27,8 @@ authentication, TLS or hardening, and is not meant to be exposed to a network.
 - Docker with Docker Compose v2
 - GNU Make and OpenSSL
 - About 12 GB of free disk space (database plus the downloaded extract)
-- About 5 GB of RAM available to Docker
+- About 6 GB of RAM available to Docker. The stack itself stays within about
+  5 GB: every service has a memory limit (see [Memory](#memory)).
 
 ## Setup
 
@@ -101,12 +102,29 @@ options.
 | `LOKI_PORT`                | `8089`                                                    |
 | `PROMETHEUS_RETENTION`     | `15d`                                                     |
 | `GEOSERVER_VERSION`        | `3.0.1`                                                   |
-| `GEOSERVER_JAVA_OPTS`      | `-Xms1g -Xmx2g`                                           |
-| `PG_SHARED_BUFFERS`        | `1GB`                                                     |
-| `PG_EFFECTIVE_CACHE_SIZE`  | `3GB`                                                     |
 | `OSM_EXTRACT_URL`          | `https://download.geofabrik.de/europe/norway-latest.osm.pbf` |
 | `OSM2PGSQL_CACHE_MB`       | `1500`                                                    |
 | `OSM2PGSQL_PROCESSES`      | `4`                                                       |
+
+### Memory
+
+Every service has a hard memory limit, so the stack has a known footprint and
+a load test cannot take memory from the rest of the machine. The limits and the
+settings that must fit inside them are in `environments/.env`:
+
+| Variable                  | Default   | Notes |
+|---------------------------|-----------|-------|
+| `GEOSERVER_MEM_LIMIT`     | `2g`      | Container limit |
+| `GEOSERVER_JAVA_OPTS`     | `-Xms512m -Xmx1536m` | Heap; leave about 0.5 GB of the limit for the JVM itself |
+| `POSTGIS_MEM_LIMIT`       | `1536m`   | Container limit |
+| `PG_SHARED_BUFFERS`       | `512MB`   | PostgreSQL buffer cache |
+| `PG_EFFECTIVE_CACHE_SIZE` | `1GB`     | Planner hint for the OS file cache |
+| `GRAFANA_MEM_LIMIT`, `PROMETHEUS_MEM_LIMIT`, `LOKI_MEM_LIMIT`, `ALLOY_MEM_LIMIT` | `512m`, `256m`, `256m`, `256m` | |
+| `LOADER_MEM_LIMIT`        | `3g`      | OSM import only (osm2pgsql cache `OSM2PGSQL_CACHE_MB`) |
+
+With more memory, raise the GeoServer and PostgreSQL values together with their
+limits. Load test reports show each container's peak memory against its limit
+and flag containers that come close to it or are OOM-killed.
 
 To use a different area, set `OSM_EXTRACT_URL` to another
 [Geofabrik](https://download.geofabrik.de/) extract and run `make load-data`.

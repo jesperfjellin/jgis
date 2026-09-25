@@ -6,8 +6,11 @@ x-postgis-env: &postgis-env
   PGUSER: postgres
   PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env}
 
+# Every service has a memory limit (mem_limit, set in environments/.env), so the
+# stack has a fixed footprint and a load test cannot starve the host.
 services:
   postgis:
+    mem_limit: ${POSTGIS_MEM_LIMIT:-1536m}
     image: postgis/postgis:18-3.6
     restart: unless-stopped
     ports:
@@ -27,9 +30,9 @@ services:
       - -c
       - track_io_timing=on
       - -c
-      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
       - -c
-      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}
       - -c
       - work_mem=32MB
       - -c
@@ -54,6 +57,7 @@ services:
 
   # One-shot OSM import: `make load-data`.
   loader:
+    mem_limit: ${LOADER_MEM_LIMIT:-3g}
     build: ./data
     profiles: [tools]
     environment:
@@ -68,6 +72,7 @@ services:
         condition: service_healthy
 
   geoserver:
+    mem_limit: ${GEOSERVER_MEM_LIMIT:-2g}
     build:
       context: ./geoserver
       args:
@@ -83,7 +88,7 @@ services:
       GEOSERVER_ADMIN_USER: admin
       GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD:?set in .env}
       EXTRA_JAVA_OPTS: >-
-        ${GEOSERVER_JAVA_OPTS:--Xms1g -Xmx2g}
+        ${GEOSERVER_JAVA_OPTS:--Xms512m -Xmx1536m}
         -javaagent:/opt/jmx/jmx_prometheus_javaagent.jar=9404:/opt/jmx/config.yaml
       HEALTHCHECK_URL: http://localhost:8080/geoserver/web/wicket/resource/org.geoserver.web.GeoServerBasePage/img/logo.png
     volumes:
@@ -96,6 +101,7 @@ services:
 
   # Browser client for visual checks. Open the URL printed by `make up`.
   geolibre:
+    mem_limit: ${GEOLIBRE_MEM_LIMIT:-128m}
     # Unreleased main-branch build: the deployment service library
     # (GEOLIBRE_SERVICES_FILE) is newer than the v3.0.0 release. Move to the
     # next release tag once it includes it.
@@ -124,6 +130,7 @@ services:
   # --- Observability ---------------------------------------------------------
 
   prometheus:
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-256m}
     image: prom/prometheus:v3.15.0
     restart: unless-stopped
     # Changes when its bind-mounted config changes (see Makefile), which makes
@@ -148,6 +155,7 @@ services:
       retries: 12
 
   loki:
+    mem_limit: ${LOKI_MEM_LIMIT:-256m}
     image: grafana/loki:3.7.8
     restart: unless-stopped
     # Changes when its bind-mounted config changes (see Makefile), which makes
@@ -165,6 +173,7 @@ services:
   # Tails the GeoServer access log (request metrics + logs) and all container
   # logs of this Compose project, and ships them to Loki.
   alloy:
+    mem_limit: ${ALLOY_MEM_LIMIT:-256m}
     image: grafana/alloy:v1.19.2
     restart: unless-stopped
     # Changes when its bind-mounted config changes (see Makefile), which makes
@@ -187,6 +196,7 @@ services:
       - loki
 
   postgres-exporter:
+    mem_limit: ${POSTGRES_EXPORTER_MEM_LIMIT:-64m}
     image: prometheuscommunity/postgres-exporter:v0.20.1
     restart: unless-stopped
     command:
@@ -203,6 +213,7 @@ services:
         condition: service_healthy
 
   grafana:
+    mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
     image: grafana/grafana:13.2.2
     restart: unless-stopped
     # Changes when its bind-mounted config changes (see Makefile), which makes
@@ -240,6 +251,7 @@ services:
 
   # One-shot: applies the Terraform-managed GeoServer catalog. Run by `make up`.
   bootstrap:
+    mem_limit: ${BOOTSTRAP_MEM_LIMIT:-256m}
     image: hashicorp/terraform:1.16.4
     profiles: [tools]
     entrypoint: ["/terraform/bootstrap.sh"]
